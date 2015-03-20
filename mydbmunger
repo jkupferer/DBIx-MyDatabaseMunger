@@ -438,10 +438,10 @@ sub make_archive_table_desc ($$)
     # Add columns required for archive fields.
     # Column definitions were given above.
     for my $col (qw(action updid dbuser stmt)) {
-        $col = $state->{colname}{$col};
+        my $colname = $state->{colname}{$col};
         # Skip columns already defined in the parent table.
-        next if $table->{column_definition}{$col};
-        push @columns, $col;
+        next if $table->{column_definition}{$colname};
+        push @columns, $colname;
     }
     
     $archive_table{columns} = \@columns;
