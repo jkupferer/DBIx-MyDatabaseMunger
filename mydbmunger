@@ -11,7 +11,7 @@ use warnings;
 use autodie;
 
 use constant USAGE => <<EOF;
-Usage: mydbmunger [OPTIONS] COMMAND SCHEMA
+Usage: mydbmunger [OPTIONS] COMMAND [SCHEMA]
 
 Available COMMANDs are "pull", "push", and "make-archive"
 
@@ -681,11 +681,12 @@ sub parse_commandline ()
     ) or die USAGE;
 
     # Read the database from the arguments.
+    my $command = shift @ARGV
+        or die "COMMAND not specified.\n",USAGE;
+    my $schema = shift @ARGV
+        or $command eq 'make-archive' or die "SCHEMA must be specified with $command.\n";
     die "Too many non-option arguments.\n",USAGE
-        if @ARGV > 2;
-    die "COMMAND or SCHEMA not specified.\n",USAGE
-        if @ARGV != 2;
-    my($command,$schema) = @ARGV;
+        if @ARGV;
 
     # Set defaults on mtime and ctime columns if the options were given without
     # values.
