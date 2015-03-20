@@ -569,8 +569,7 @@ sub write_archive_trigger_fragments ($$$)
     my @scols = grep { $colname->{$_} } sort keys %$colname;
 
     $fragment =
-        "DECLARE stmt longtext;\n" .
-        "SET stmt = ( SELECT info FROM INFORMATION_SCHEMA.PROCESSLIST WHERE id = CONNECTION_ID() );\n" .
+        "SET \@stmt = ( SELECT info FROM INFORMATION_SCHEMA.PROCESSLIST WHERE id = CONNECTION_ID() );\n" .
         "INSERT INTO `$archive_table->{name}` (\n" .
         "  `".join( '`, `', @cols, map { $colname->{$_} } @scols )."`\n".
         ") VALUES (\n";
@@ -583,7 +582,7 @@ sub write_archive_trigger_fragments ($$$)
             $_ eq 'action'  ? "'insert'" :
             $_ eq 'updid' ? $state->{updidvar} :
             $_ eq 'dbuser'  ? "USER()" :
-            $_ eq 'stmt'    ? "stmt" : die "BUG! $_ unhandled!"
+            $_ eq 'stmt'    ? '@stmt' : die "BUG! $_ unhandled!"
         } @scols )."\n);\n"
     );
 
@@ -595,7 +594,7 @@ sub write_archive_trigger_fragments ($$$)
             $_ eq 'action'  ? "'update'" :
             $_ eq 'updid' ? $state->{updidvar} :
             $_ eq 'dbuser'  ? "USER()" :
-            $_ eq 'stmt'    ? "stmt" : die "BUG! $_ unhandled!"
+            $_ eq 'stmt'    ? '@stmt' : die "BUG! $_ unhandled!"
         } @scols )."\n);\n"
     );
 
@@ -609,7 +608,7 @@ sub write_archive_trigger_fragments ($$$)
             $_ eq 'dbuser'   ? "USER()" :
             $_ eq 'mtime'    ? "CURRENT_TIMESTAMP" :
             $_ eq 'revision' ? "1 + OLD.`$colname->{revision}`" :
-            $_ eq 'stmt'     ? "stmt" : die "BUG! $_ unhandled!"
+            $_ eq 'stmt'     ? '@stmt' : die "BUG! $_ unhandled!"
         } @scols )."\n);\n"
     );
 
