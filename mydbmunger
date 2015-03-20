@@ -577,7 +577,9 @@ sub write_archive_trigger_fragments ($$$)
 
 
     # Columns that don't receive special treatment.
-    my @cols = grep { not $colname->{$_} } @{ $table->{columns} };
+    # Exclude columns with special names.
+    my %namecol = reverse %$colname;
+    my @cols = grep { not $namecol{$_} } @{ $table->{columns} };
 
     # Special columns
     my @scols = grep { $colname->{$_} } sort keys %$colname;
