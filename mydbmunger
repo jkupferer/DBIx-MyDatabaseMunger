@@ -1151,7 +1151,10 @@ sub do_push ($)
             ++$count;
             print $task->{desc},"\n";
 	    print "\n$task->{sql}\n\n" if $VERBOSE or $DRYRUN;
-            $state->{dbh}->do( $task->{sql} ) unless $DRYRUN;
+            eval {
+                $state->{dbh}->do( $task->{sql} ) unless $DRYRUN;
+            };
+            die "Error executing SQL: $@\n$task->{sql}\n" if $@;
         }
     }
 
