@@ -713,18 +713,15 @@ sub parse_commandline ()
         print "\n";
     }
 
-    # Build Perl DBI dsn
-    my $dsn = "DBI:mysql:database=$schema";
-    $dsn .= ";host=$host" if $host;
-    $dsn .= ";port=$port" if $port;
-
     return {
         command => $command,
         directory => $directory,
         schema => $schema,
         tables => \@tables,
         connect => {
-            dsn => $dsn,
+            schema => $schema,
+            host => $host,
+            port => $port,
             user => $user,
             password => $password,
         },
@@ -755,8 +752,14 @@ sub dbi_connect ($)
 {
     my($state) = @_;
     use DBI ();
+
+    # Build Perl DBI dsn
+    my $dsn = "DBI:mysql:database=$state->{connect}{schema}";
+    $dsn .= ";host=$state->{connect}{host}" if $state->{connect}{host};
+    $dsn .= ";port=$state->{connect}{port}" if $state->{connect}{port};
+
     my $dbh = DBI->connect(
-        $state->{connect}{dsn},
+        $dsn,
         $state->{connect}{user},
         $state->{connect}{password},
         { PrintError => 0, RaiseError => 1 }
