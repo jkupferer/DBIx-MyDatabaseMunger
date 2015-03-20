@@ -303,10 +303,19 @@ sub check_table_is_archive_capable ($$)
     die "$table->{name} lacks a primary key."
         unless @{$table->{primary_key}};
 
-    my $coldef = $table->{column_definition}{$state->{colname}{revision}}
-        or die "$table->{name} lacks $state->{colname}{revision} column.\n";
+    my($col,$coldef);
+
+    $col = $state->{colname}{revision};
+    $coldef = $table->{column_definition}{$col}
+        or die "$table->{name} lacks $col column.\n";
     $coldef =~ m/\b(int|bigint)\b/
-        or die "$table->{name} column $state->{colname}{revision} is not an integer type.\n";
+        or die "$table->{name} column $col is not an integer type.\n";
+
+    $col = $state->{colname}{updid};
+    if( $table->{col_definition}{$col} ) {
+        $coldef =~ m/\b(varchar)\b/
+            or die "$table->{name} column $col is not a string type.\n";
+    }
 
     for my $timecol (qw(mtime ctime)) {
         my $col = $state->{colname}{$timecol} or next;
@@ -428,7 +437,12 @@ sub make_archive_table_desc ($$)
 
     # Add columns required for archive fields.
     # Column definitions were given above.
-    push @columns, map { $state->{colname}{$_} } qw(action updid dbuser stmt);
+    for my $col (qw(action updid dbuser stmt)) {
+        $col = $state->{colname}{$col};
+        # Skip columns already defined in the parent table.
+        next if $table->{column_definition}{$col};
+        push @columns, $col;
+    }
     
     $archive_table{columns} = \@columns;
     $archive_table{column_definition} = \%column_definition;
