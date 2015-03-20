@@ -77,7 +77,7 @@ OPTIONS FOR COMMAND make-archive:
                       Column name used in the source data and archive tables
                       used to track last-modification time. This must be a
                       TIMESTAMP or DATETIME data type. If option this option
-                      is given without a vaulue then the column name "mtime"
+                      is given without a value then the column name "mtime"
                       will be used. Default is no modification time handling.
       --revision=COLUMN
                       Column name used in the source data and archive tables
@@ -1088,7 +1088,6 @@ sub queue_push_trigger_definitions ($)
                         sql => $create_sql,
 		    };
                 } elsif( $current->{sql} ne $new ) {
-print ">>>$current->{sql}<<<\n>>>$new<<<\n";
                     push @{$todo->{drop_trigger}}, {
                         desc => "Drop $time $action on $table trigger.",
                         sql => "DROP TRIGGER IF EXISTS `$current->{name}`",
@@ -1148,8 +1147,8 @@ sub do_push ($)
         for my $task ( @{$todo{$action}} ) {
             ++$count;
             print $task->{desc},"\n";
-	    print "\n$task->{sql}\n\n" if $VERBOSE;
-            $state->{dbh}->do( $task->{sql} );
+	    print "\n$task->{sql}\n\n" if $VERBOSE or $DRYRUN;
+            $state->{dbh}->do( $task->{sql} ) unless $DRYRUN;
         }
     }
 
