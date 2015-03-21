@@ -10,8 +10,11 @@ use strict;
 use warnings;
 use autodie;
 
+use lib 'lib';
+use DBIx::MyDatabaseMunger ();
+
 use constant USAGE => <<EOF;
-Usage: mydbmunger [OPTIONS] COMMAND [SCHEMA]
+Usage: mydbmunger [OPTIONS] COMMAND
 
 Available COMMANDs are "pull", "push", and "make-archive"
 
@@ -26,13 +29,28 @@ Available COMMANDs are "pull", "push", and "make-archive"
          Write trigger and archive table definitions.
 
 GENERAL OPTIONS:
-  -d, --dryrun        Don't commit any changes, just print SQL that would be
-                      executed.
+  -c, --config=FILE   Read configuration options from a JSON formatted
+                      configuration file. The configuration should be a JSON
+                      object with keys that match the long option names
+                      listed in this help documentation.
   -D, --dir=PATH      Directory in which to read and write database information.
                       Default is current directory.
-  -h, --host=name     Connect to host.
       --no-tables     Don't do anything with triggers.
       --no-triggers   Don't do anything with triggers.
+  -t, --table=TABLE[,TABLE]...
+                      Specify for which tables to perform the given COMMAND. If
+                      not provided, then we will attempt to detect suitable
+                      tables automatically.
+  -v, --verbose       Show verbose messages.
+
+OPTIONS FOR COMMAND pull OR push:
+  -d, --dryrun        Don't commit any changes, just print SQL that would be
+                      executed.
+  -h, --host=name     Connect to host.
+      --init-trigger-name=NAME
+                      Name to use for any unlabeled trigger fragments. Without
+                      this option, unlabeled fragments are treated as an
+                      error.
   -p, --password[=PASSWORD] 
                       Password to use when connecting to server. If password is
                       not provided on the command line it will asked from the
@@ -40,18 +58,9 @@ GENERAL OPTIONS:
   -P, --port=#        Port number to use for connection or 0 for default to, in
                       order of preference, my.cnf, \$MYSQL_TCP_PORT,
                       /etc/services, built-in default (3306).
-  -t, --table=TABLE[,TABLE]...
-                      Specify for which tables to perform the given COMMAND. If
-                      not provided, then we will attempt to detect suitable
-                      tables automatically.
+  -s, --schema=DATABASE
+                      MySQL/MariaDB database schema.
   -u, --user=NAME     User for login if not current user.
-  -v, --verbose       Show verbose messages.
-
-OPTIONS FOR COMMAND pull:
-      --init-trigger-name=NAME
-                      Name to use for any unlabeled trigger fragments. Without
-                      this option, unlabeled fragments are treated as an
-                      error.
                       
 
 OPTIONS FOR COMMAND make-archive:
@@ -59,6 +68,11 @@ OPTIONS FOR COMMAND make-archive:
                       Column name used in archive table to store the SQL
                       type of SQL action caused the archive to be created.
                       Default: "action"
+      --archive-name-pattern=s
+                      How to name archive tables. Specified as a pattern with
+                      a placeholder "%" for the original table name. Default:
+                      "%Archive", so by a table named "Post" would have a
+                      archive table named "PostArchive".
       --ctime[=COLUMN]
                       Column name used in the source data and archive tables
                       used to track record creation time. This must be a
@@ -68,11 +82,6 @@ OPTIONS FOR COMMAND make-archive:
       --dbusercol=COLUMN
                       Column name to be used in archive table to store the
                       database connection login information. Default: "user"
-      --archive-name-pattern=s
-                      How to name archive tables. Specified as a pattern with
-                      a placeholder "%" for the original table name. Default:
-                      "%Archive", so by a table named "Post" would have a
-                      archive table named "PostArchive".
       --mtime[=COLUMN]
                       Column name used in the source data and archive tables
                       used to track last-modification time. This must be a
@@ -95,539 +104,42 @@ OPTIONS FOR COMMAND make-archive:
 
 EOF
 
-our $DRYRUN = 0;
-our $VERBOSE = 0;
-
-# When running the todo list, do these things in this order.
-our @TODO_ACTIONS = qw(
-drop_foreign_key
-drop_trigger
-drop_key
-drop_column
-drop_table
-create_table
-add_column
-modify_column
-add_key
-add_foreign_key
-create_trigger
-);
-
-=item table_names ( $state )
-
-Return a list of all saved table names.
+=item read_config ( $opt, $config )
 
 =cut
 
-sub table_names ($)
+sub read_config ($$)
 {
-    my($state) = @_;
-    my @names;
+    my( $opt, $config_file ) = @_;
 
-    opendir my $dh, "$state->{directory}/table";
-    while( my $table_sql = readdir $dh ) {
-        my($name) = $table_sql =~ m/^(.*)\.sql/
-            or next;
-        push @names, $name;
-    };
-
-    return @names;
-}
-
-=item parse_create_table_sql ( $sql )
-
-Parse a CREATE TABLE statement generated by mysql "SHOW CREATE TABLE ..."
-
-This function is very particular about the input format.
-
-=cut
-
-sub parse_create_table_sql ($)
-{
-    my($sql) = @_;
-
-    my @create_sql = split "\n", $sql;
-
-    # Read the table name from the "CREATE TABLE `<NAME>` (
-    shift( @create_sql ) =~ m/CREATE TABLE `(.*)`/ or die "Create table SQL does not begin with CREATE TABLE!\n";
-    my $name = $1;
-
-    # The last line should have the talbe options
-    # ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 COMMENT='Application User.'
-    # We don't need to understand every last option, but let's extract at least the
-    # ENGINE and COMMENT.
-    my $line = pop @create_sql;
-    my($table_options) = $line =~ m/\)\s*(.*)/;
-
-    # Extract the ENGINE= from the table options.
-    $table_options =~ s/ENGINE=(\S+)\s*//
-        or die "Table options lack ENGINE specification?!";
-    my $engine = $1;
-
-    # Extract the COMMENT and undo mysql ' quoting. We shouldn't have to deal
-    # with weird characters or backslashes in comments, so let's keep it
-    # simple.
-    my $comment;
-    if( $table_options =~ s/\s*COMMENT='(([^']|'')*)'// ) {
-        $comment = $1;
-        $comment =~ s/''/'/g;
-    }
-
-    # The remaining lines should be column definitions followed by keys.
-    my @columns;
-    my %column_definition;
-    my @constraints;
-    my %constraint_definition;
-    my @keys;
-    my %key_definition;
-    my @primary_key;
-
-    for my $line ( @create_sql ) {
-        $line =~ s/,$//; # Strip trailing commas
-
-        # Strip out DEFAULT NULL so that it is easier to compare column definitions.
-        $line =~ s/ DEFAULT NULL//;
-
-        if( $line =~ m/^\s*`([^`]+)`\s*(.*)/ ) {
-            my($col,$def) = ($1,$2);
-            push @columns, $col;
-            $column_definition{ $col } = $def;
-        } elsif( $line =~ m/^\s*PRIMARY KEY \(`(.*)`\)/ ) {
-            @primary_key = split( '`,`', $1 );
-        } elsif( $line =~ m/^\s*((UNIQUE )?KEY `([^`]+)`.*)/ ) {
-            my($key,$def) = ($3,$1);
-            push @keys, $key;
-            $key_definition{ $key } = $def;
-        } elsif( $line =~ m/^\s*CONSTRAINT\s+`(.*)`\s+(.*)/ ) {
-            my($con,$def) = ($1,$2);
-            push @constraints, $con;
-            $constraint_definition{ $con } = $def;
-        } else {
-            warn "Don't understand line in CREATE TABLE:\n$line";
-        }
-    }
-
-    return {
-        name => $name,
-        comment => $comment,
-        engine => $engine,
-        table_options => $table_options,
-        columns => \@columns,
-        column_definition => \%column_definition,
-        keys => \@keys,
-        key_definition => \%key_definition,
-        primary_key => \@primary_key,
-    };
-}
-
-=item read_table_sql ( $table_name )
-
-Given a table name, retrieve the table definition SQL.
-
-=cut
-
-sub read_table_sql ($$)
-{
-    my($state,$name) = @_;
-
-    # File slurp mode.
-    local $/;
-
-    open my $fh, "$state->{directory}/table/$name.sql";
-    my $sql = <$fh>;
-    close $fh;
-
-    return $sql;
-}
-
-=item get_table_desc ( $table_name )
-
-Given a table name, retrieve the parsed table definition.
-
-=cut
-
-sub get_table_desc ($$)
-{
-    my($state,$name) = @_;
-    my $sql = read_table_sql( $state, $name );
-    my $desc;
+    my $conf;
     eval {
-        $desc = parse_create_table_sql( $sql );
+        # Slurp file.
+        local $/;
+        open my $fh, "<", $config_file;
+
+        use JSON ();
+        my $json = JSON->new->relaxed;
+        $conf = $json->decode( <$fh> );
+        close $fh;
     };
-    die "Error parsing SQL for table `$name`:\n$@" if $@;
-    die "Table name mismatch while reading SQL for `$name`, got `$desc->{name}` instead!\n"
-        unless $name eq $desc->{name};
+    die "Error reading configuration JSON: $@\n" if $@;
 
-    return $desc;
-}
-
-=item find_data_tables_with_revision ( $state )
-
-Return table definitions that have a revision column.
-
-=cut
-
-sub find_data_tables_with_revision ($)
-{
-    my($state) = @_;
-
-    my $archive_name_regexp = $state->{archive_name_pattern};
-    $archive_name_regexp =~ s/%/.*/;
-    $archive_name_regexp = qr/^$archive_name_regexp$/;
-
-    my @tables = ();
-
-    for my $name ( table_names( $state ) ) {
-        # Skip tables that are archive_tables
-        next if $name =~ $archive_name_regexp;
-
-        my $table = get_table_desc( $state, $name );
-        push @tables, $table
-            if $table->{column_definition}{ $state->{colname}{revision} };
+    for my $o (qw(archive-name-pattern dir init-trigger-name schema updidvar)) {
+        my $f = $o;
+        $f =~ tr/\-/_/;
+        $opt->{$f} = $conf->{$o}
+            if defined $conf->{$o} and not defined $opt->{$f};
+    }
+    for my $f (qw(host password port schema user)) {
+        $opt->{connect}{$f} = $conf->{$f}
+            if defined $conf->{$f} and not defined $opt->{connect}{$f};
+    }
+    if( $conf->{tables} and not @{ $opt->{tables} } ) {
+        $opt->{tables} = $conf->{tables};
     }
 
-    return @tables;
-}
-
-=item check_table_is_archive_capable ( $state, $table )
-
-Check that a table has bare minimum support required to have an archive
-table.
-
-=cut
-
-sub check_table_is_archive_capable ($$)
-{
-    my ( $state, $table ) = @_;
-
-    die "$table->{name} lacks a primary key."
-        unless @{$table->{primary_key}};
-
-    my($col,$coldef);
-
-    $col = $state->{colname}{revision};
-    $coldef = $table->{column_definition}{$col}
-        or die "$table->{name} lacks $col column.\n";
-    $coldef =~ m/\b(int|bigint)\b/
-        or die "$table->{name} column $col is not an integer type.\n";
-
-    $col = $state->{colname}{updid};
-    if( $table->{col_definition}{$col} ) {
-        $coldef =~ m/\b(varchar)\b/
-            or die "$table->{name} column $col is not a string type.\n";
-    }
-
-    for my $timecol (qw(mtime ctime)) {
-        my $col = $state->{colname}{$timecol} or next;
-        $coldef = $table->{column_definition}{$col}
-            or die "$table->{name} lacks $col column.\n";
-        $coldef =~ m/\b(timestamp|datetime)\b/
-            or die "$table->{name} column $col is neither a timestamp or datetime field.\n";
-    }
-
-    # Check for obvious name conflicts.
-    for my $col (qw(dbuser action stmt)) {
-        die "Archive table column conflict, souce table `$table->{name}` has column `$col`.\n"
-            if $table->{column_definition}{$col};
-    }
-
-    die "I can't promise this will work for table $table->{name} with ENGINE=$table->{engine}\n"
-        unless $table->{engine} eq 'InnoDB';
-}
-
-=item check_table_updatable( $state, $current, $desired )
-
-Check that the current table could be updated to the desired state.
-
-=cut
-
-sub check_table_updatable ($$$)
-{
-    my( $state, $current, $desired ) = @_;
-    my $name = $current->{name};
-
-    die "Table `$name` lacks a primary key."
-        unless @{$current->{primary_key}};
-
-    die "Table `$name` primary key is not (`".join('`,`',@{$desired->{primary_key}})."`)\n"
-        unless join('|',@{$current->{primary_key}}) eq join('|',@{$desired->{primary_key}});
-
-    # Check for update paths between column definitions...
-    for my $col ( @{$desired->{columns}} ) {
-        my $cdef = $current->{column_definition}{$col};
-        my $ddef = $desired->{column_definition}{$col};
-
-        # It should be okay to add a column... though it may fail if it is
-        # part of a unique index.
-        next unless $cdef;
-
-        my $num_type = qr/^((|tiny|small|medium|big)int|decimal|numeric|floadt|double)\b/;
-        my $datetime_type = qr/^(date|datetime|timestamp)\b/;
-        my $string_type = qr/^(char|varchar|binary|varbinary|(|tiny|medium|long)(blob|text)|enum|set)\b/;
-        if( $ddef =~ $num_type ) {
-            $cdef =~ $num_type or die "Table $name column $col is not a numeric type.\n";
-        } elsif( $ddef =~ $datetime_type ) {
-            $cdef =~ $datetime_type or die "Table $name column $col is not a datetime or timestamp type.\n";
-        } elsif( $ddef =~ $string_type ) {
-            $cdef =~ $string_type or die "Table $name column $col is not a string type.\n";
-        }
-    }
-
-    die "Unable Table `$current->{name}`, engine mismatch $current->{engine} vs. $desired->{engine}\n"
-        unless $current->{engine} eq $desired->{engine};
-}
-   
-
-=item make_archive_table_desc ( $state, $table_desc )
-
-Make a archive table description for the given source table description.
-
-=cut
-
-sub make_archive_table_desc ($$)
-{
-    my( $state, $table ) = @_;
-
-    # Use name pattern to generate archive table names.
-    my $name = $state->{archive_name_pattern};
-    $name =~ s/%/$table->{name}/;
-
-    my %archive_table = (
-        name => $name,
-        comment => "$table->{name} archive.",
-        engine => $table->{engine},
-        table_options => $table->{table_options},
-        primary_key => [ @{$table->{primary_key}}, $state->{colname}{revision} ],
-    );
-
-    # Column definitions required for audit fields.
-    my %column_definition = (
-        $state->{colname}{dbuser} =>
-            "varchar(256) NOT NULL COMMENT 'Database user & host that made this change.'",
-        $state->{colname}{updid} =>
-            "varchar(256) NOT NULL COMMENT 'Application user that made this change.'",
-        $state->{colname}{action} =>
-            "enum('insert','update','delete') NOT NULL COMMENT 'SQL action.'",
-        $state->{colname}{stmt} =>
-            "longtext NOT NULL COMMENT 'SQL Statement that initiated this change.'",
-    );
-
-    my @columns;
-    for my $col ( @{ $table->{columns} } ) {
-        push @columns, $col;
-        my $def = $table->{column_definition}{$col};
-
-        # Drop properties not appropriate for archive tables.
-        $def =~ s/ AUTO_INCREMENT//;
-
-        # Adjust timestamp defaults and update properties to remove
-        # CURRENT_TIMESTAMP behavior.
-        if( $def =~ m/^timestamp\b/ ) {
-            $def =~ s/ ON UPDATE CURRENT_TIMESTAMP//;
-            $def =~ s/ DEFAULT CURRENT_TIMESTAMP/ DEFAULT '0000-00-00 00:00:00'/;
-        } elsif( ! grep { $col eq $_ } @{ $archive_table{primary_key} } ) {
-            # Allow NULL and strip defaults for columns not part of the primary
-            # key.
-            $def =~ s/ DEFAULT '([^']|'')+'//;
-            $def =~ s/ NOT NULL//;
-        }
-
-        $column_definition{ $col } = $def;
-    }
-
-    # Add columns required for archive fields.
-    # Column definitions were given above.
-    for my $col (qw(action updid dbuser stmt)) {
-        my $colname = $state->{colname}{$col};
-        # Skip columns already defined in the parent table.
-        next if $table->{column_definition}{$colname};
-        push @columns, $colname;
-    }
-    
-    $archive_table{columns} = \@columns;
-    $archive_table{column_definition} = \%column_definition;
-
-    my @keys;
-    my %key_definition;
-    for my $key ( @{ $table->{keys} } ) {
-        push @keys, $key;
-        my $def = $table->{key_definition}{$key};
-
-        # Strip unique property from keys.
-        $def =~ s/^UNIQUE\s*//;
-
-        $key_definition{$key} = $def;
-    }
-
-    $archive_table{keys} = \@keys;
-    $archive_table{key_definition} = \%key_definition;
-    
-    return \%archive_table;
-}
-
-=item write_table_sql( $state, $name, $sql )
-
-Save create table SQL for a table.
-
-=cut
-
-sub write_table_sql ($$$)
-{
-    my( $state, $name, $sql ) = @_;
-    my $fh;
-
-    # Make table directory if required.
-    mkdir "$state->{directory}/table"
-        unless -d "$state->{directory}/table";
-
-    open $fh, ">", "$state->{directory}/table/$name.sql";
-    print $fh $sql;
-    close $fh;
-}
-
-=item write_table_definition( $state, $table )
-
-Write create table SQL for given table description.
-
-=cut
-
-sub write_table_definition ($$)
-{
-    my( $state, $table ) = @_;
-
-    my $sql = "CREATE TABLE `$table->{name}` (\n";
-
-    for my $col ( @{ $table->{columns} } ) {
-        $sql .= "  `$col` $table->{column_definition}{$col},\n";
-    }
-
-    for my $key ( @{ $table->{keys} } ) {
-        $sql .= "  $table->{key_definition}{$key},\n";
-    }
-
-    # Quote in a lazy way... to do it proper would require a database
-    # connection.
-    my $comment = $table->{comment} || $table->{name};
-    $comment =~ s/'/''/g;
-
-    $sql .= "  PRIMARY KEY (`".join('`,`', @{$table->{primary_key}} )."`)\n";
-    $sql .= ") ENGINE=$table->{engine} $table->{table_options} COMMENT='$comment'\n";
-
-    write_table_sql( $state, $table->{name}, $sql );
-}
-
-=item write_trigger_fragment_sql( $state, $name, $time, $action, $table, $sql )
-
-Write trigger fragement SQL to a file.
-
-=cut
-
-sub write_trigger_fragment_sql ($$$$$$)
-{
-    my( $state, $name, $time, $action, $table, $sql ) = @_;
-    my $fh;
-
-    # Make table directory if required.
-    mkdir "$state->{directory}/trigger"
-        unless -d "$state->{directory}/trigger";
-
-    open $fh, ">", "$state->{directory}/trigger/$name.$time.$action.$table.sql";
-    print $fh $sql;
-    close $fh;
-}
-
-=item write_archive_trigger_fragments( $state, $table, $archive_table_desc )
-
-Write trigger fragment sql for archive table management.
-
-=cut
-
-sub write_archive_trigger_fragments ($$$)
-{
-    my( $state, $table, $archive_table ) = @_;
-    my $colname = $state->{colname};
-    my $fragment;
-    my $fh;
-
-    # Make trigger directory if required.
-    mkdir "$state->{directory}/trigger"
-        unless -d "$state->{directory}/trigger";
-
-
-    # Before insert
-    $fragment = "SET NEW.`$colname->{revision}` = 0;\n";
-    $fragment .= "SET NEW.`$colname->{ctime}` = CURRENT_TIMESTAMP;\n"
-        if $colname->{ctime};
-    $fragment .= "SET NEW.`$colname->{mtime}` = CURRENT_TIMESTAMP;\n"
-        if $colname->{mtime};
-    $fragment .= "SET NEW.`$colname->{updid}` = $state->{updidvar};\n"
-        if $table->{column_definition}{ $colname->{updid} };
-    write_trigger_fragment_sql( $state, "20-archive","before","insert",$table->{name},$fragment);
-
-
-    # Before update
-    $fragment = "SET NEW.`$colname->{revision}` = OLD.`$colname->{revision}` + 1;\n";
-    $fragment .= "SET NEW.`$colname->{ctime}` = OLD.`$colname->{ctime}`;\n"
-        if $colname->{ctime};
-    $fragment .= "SET NEW.`$colname->{mtime}` = CURRENT_TIMESTAMP;\n"
-        if $colname->{mtime};
-    $fragment .= "SET NEW.`$colname->{updid}` = $state->{updidvar};\n"
-        if $table->{column_definition}{ $colname->{updid} };
-    write_trigger_fragment_sql( $state, "20-archive","before","update",$table->{name},$fragment);
-
-
-    # Columns that don't receive special treatment.
-    # Exclude columns with special names.
-    my %namecol = reverse %$colname;
-    my @cols = grep { not $namecol{$_} } @{ $table->{columns} };
-
-    # Special columns
-    my @scols = grep { $colname->{$_} } sort keys %$colname;
-
-    $fragment =
-        "SET \@stmt = ( SELECT info FROM INFORMATION_SCHEMA.PROCESSLIST WHERE id = CONNECTION_ID() );\n" .
-        "INSERT INTO `$archive_table->{name}` (\n" .
-        "  `".join( '`, `', @cols, map { $colname->{$_} } @scols )."`\n".
-        ") VALUES (\n";
-
-    # After insert
-    write_trigger_fragment_sql( $state, "40-archive","after","insert",$table->{name},$fragment.
-        "  NEW.`".join('`, NEW.`', @cols)."`,\n" .
-        "  ".join(', ', map {
-            m/^(ctime|mtime|revision)$/ ? "NEW.`$colname->{$_}`" :
-            $_ eq 'action'  ? "'insert'" :
-            $_ eq 'updid' ? $state->{updidvar} :
-            $_ eq 'dbuser'  ? "USER()" :
-            $_ eq 'stmt'    ? '@stmt' : die "BUG! $_ unhandled!"
-        } @scols )."\n);\n"
-    );
-
-    # After update
-    write_trigger_fragment_sql( $state, "40-archive","after","update",$table->{name},$fragment.
-        "  NEW.`".join('`, NEW.`', @cols)."`,\n" .
-        "  ".join(', ', map {
-            m/^(ctime|mtime|revision)$/ ? "NEW.`$colname->{$_}`" :
-            $_ eq 'action'  ? "'update'" :
-            $_ eq 'updid' ? $state->{updidvar} :
-            $_ eq 'dbuser'  ? "USER()" :
-            $_ eq 'stmt'    ? '@stmt' : die "BUG! $_ unhandled!"
-        } @scols )."\n);\n"
-    );
-
-    # After delete
-    write_trigger_fragment_sql( $state, "40-archive","after","delete",$table->{name},$fragment.
-        "  OLD.`".join('`, OLD.`', @cols)."`,\n" .
-        "  ".join(', ', map {
-            $_ eq 'action'  ? "'update'" :
-            $_ eq 'updid'  ? $state->{updidvar} :
-            $_ eq 'ctime'    ? "OLD.`$colname->{ctime}`" :
-            $_ eq 'dbuser'   ? "USER()" :
-            $_ eq 'mtime'    ? "CURRENT_TIMESTAMP" :
-            $_ eq 'revision' ? "1 + OLD.`$colname->{revision}`" :
-            $_ eq 'stmt'     ? '@stmt' : die "BUG! $_ unhandled!"
-        } @scols )."\n);\n"
-    );
-
+    return $opt;
 }
 
 =item parse_commandline ()
@@ -636,7 +148,7 @@ Parse the command line and return the initial application state.
 
 =cut
 
-sub parse_commandline ()
+sub parse_commandline
 {
     use Getopt::Long qw(GetOptions);
     Getopt::Long::Configure('gnu_getopt');
@@ -650,39 +162,50 @@ sub parse_commandline ()
         }
     }
 
-    # Normal option handling
-    my $actioncol = 'action';
-    my $ctimecol;
-    my $dbusercol = 'dbuser';
-    my $directory = '.';
-    my $host;
-    my $init_trigger_name;
-    my $mtimecol;
+    # General options.
+    my $config;
+    my $dir;
     my $no_tables;
     my $no_triggers;
-    my $archive_name_pattern = '%Archive';
+    my @tables;
+    # $VERBOSE is global in DBIx::myDatabaseMunger
+
+    # pull/push options
+    # $DRYRUN is global in DBIx::myDatabaseMunger
+    my $host;
+    my $init_trigger_name;
     my $require_password;
     my $port;
-    my $revisioncol = "revision";
-    my $stmtcol = 'stmt';
-    my $updidcol = 'updid';
-    my $updidvar = '@updid';
+    my $schema;
     my $user;
-    my @tables;
+
+    # make-archive options
+    my $actioncol;
+    my $archive_name_pattern;
+    my $ctimecol;
+    my $dbusercol;
+    my $mtimecol;
+    my $revisioncol;
+    my $stmtcol;
+    my $updidcol;
+    my $updidvar;
+
     GetOptions(
         # General options.
-        "d|dryrun" => \$DRYRUN,
-        "D|dir=s" => \$directory,
-        "h|host=s" => \$host,
+        "c|config=s" => \$config,
+        "D|dir=s" => \$dir,
         "no-tables" => \$no_tables,
         "no-triggers" => \$no_triggers,
+        "t|table=s" => \@tables,
+        "v|verbose" => \$DBIx::MyDatabaseMunger::VERBOSE,
+        # pull/push options
+        "d|dryrun" => \$DBIx::MyDatabaseMunger::DRYRUN,
+        "h|host=s" => \$host,
+        "init-trigger-name=s" => \$init_trigger_name,
         "p|password" => \$require_password,
         "P|port=i" => \$port,
-        "t|table=s" => \@tables,
+        "s|schema=s" => \$schema,
         "u|user=s" => \$user,
-        "v|verbose" => \$VERBOSE,
-        # pull options
-        "init-trigger-name=s" => \$init_trigger_name,
         # make-archive options
         "actioncol=s" => \$actioncol,
         "ctime:s" => \$ctimecol,
@@ -695,16 +218,14 @@ sub parse_commandline ()
         "updidvar=s" => \$updidvar,
     ) or die USAGE;
 
-    # Read the database from the arguments.
+    # Get command from @ARGV
     my $command = shift @ARGV
         or die "COMMAND not specified.\n",USAGE;
-    my $schema = shift @ARGV
-        or $command eq 'make-archive' or die "SCHEMA must be specified with $command.\n";
     die "Too many non-option arguments.\n",USAGE
         if @ARGV;
 
-    # Set defaults on mtime and ctime columns if the options were given without
-    # values.
+    # Set defaults on mtime and ctime columns if the options were given
+    # without values.
     $ctimecol = 'ctime'
         if defined $ctimecol and not $ctimecol;
     $mtimecol = 'mtime'
@@ -714,24 +235,11 @@ sub parse_commandline ()
     @tables = map { split(',') } @tables;
 
     # Strip trailing slash from directory option.
-    $directory =~ s{/$}{};
+    $dir =~ s{/$}{} if $dir;
 
-    # Read password from the command line in case it wasn't provided as an
-    #  option.
-    use Term::ReadKey;
-    if( $require_password and not $password ) {
-        $| = 1; # Autoflush stdout
-        print "Enter password: ";
-        ReadMode('noecho');
-        chomp( $password = ReadLine(0) );
-        ReadMode('restore');
-        print "\n";
-    }
-
-    return {
+    my $opt = {
         command => $command,
-        directory => $directory,
-        schema => $schema,
+        dir => $dir,
         tables => \@tables,
         connect => {
             schema => $schema,
@@ -755,502 +263,43 @@ sub parse_commandline ()
         no_tables => $no_tables,
         no_triggers => $no_triggers,
     };
-}
 
-=item dbi_connect ($state)
-
-Connect to the database.
-
-=cut
-
-sub dbi_connect ($)
-{
-    my($state) = @_;
-    use DBI ();
-
-    # Build Perl DBI dsn
-    my $dsn = "DBI:mysql:database=$state->{connect}{schema}";
-    $dsn .= ";host=$state->{connect}{host}" if $state->{connect}{host};
-    $dsn .= ";port=$state->{connect}{port}" if $state->{connect}{port};
-
-    my $dbh = DBI->connect(
-        $dsn,
-        $state->{connect}{user},
-        $state->{connect}{password},
-        { PrintError => 0, RaiseError => 1 }
-    );
-    $state->{dbh} = $dbh;
-}
-
-=item query_table_sql ( $state, $name )
-
-=cut
-
-sub query_table_sql
-{
-    my($state,$name) = @_;
-    my $dbh = $state->{dbh};
-
-    my $sth = $dbh->prepare( "SHOW CREATE TABLE `$name`" );
-    $sth->execute();
-    my @row = $sth->fetchrow_array;
-
-    return "$row[1]\n";
-}
-
-=item pull_table_definition ( $state, $name )
-
-=cut
-
-sub pull_table_definition
-{
-    my($state,$name) = @_;
-
-    print "Pulling table definition for `$name`\n" if $VERBOSE;
- 
-    my $sql = query_table_sql( $state, $name );
-
-    write_table_sql( $state, $name, $sql );
-}
-
-=item pull_table_definitions ( $state )
-
-=cut
-
-sub pull_table_definitions
-{
-    my($state) = @_;
-    my $dbh = $state->{dbh};
-
-    my $sth = $dbh->prepare( 'SHOW TABLES' );
-    $sth->execute();
-
-    # Make table directory if required.
-    mkdir "$state->{directory}/table"
-        unless -d "$state->{directory}/table";
-
-    while( my($name) = $sth->fetchrow_array ) {
-        pull_table_definition( $state, $name );
-    }
-}
-
-=item pull_trigger_definitions($state)
-
-=cut
-
-sub pull_trigger_definitions
-{
-    my($state) = @_;
-    my $dbh = $state->{dbh};
-    
-    my $list_sth = $dbh->prepare( 'SHOW TRIGGERS' );
-    $list_sth->execute();
-
-    my %triggers;
-    while( my($trigger_name,$action,$table,$sql,$time) = $list_sth->fetchrow_array() ) {
-        # Strip off BEGIN and END from trigger body
-        $sql =~ s/^\s*BEGIN\s*(.*)END\s*$/$1/s;
-
-        # Lowercase is easier to read
-        $action = lc $action;
-        $time = lc $time;
-
-	$triggers{$table} ||= {};
-	$triggers{$table}{$action} ||= {};
-	$triggers{$table}{$action}{$time} = { sql => $sql, name => $trigger_name };
+    if( $config ) {
+        read_config( $opt, $config );
     }
 
-    return %triggers;
-}
-
-=item pull_trigger_fragments($state)
-
-=cut
-
-sub pull_trigger_fragments
-{
-    my($state) = @_;
-
-    my %triggers = pull_trigger_definitions( $state );
-
-    for my $table ( sort keys %triggers ) {
-
-        if( @{ $state->{tables} } ) {
-            # Skip triggers for table based on explicit table list.
-            next unless grep { $_ eq $table } @{ $state->{tables} };
-        }
-
-        for my $action ( sort keys %{$triggers{$table}} ) {
-            for my $time ( sort keys %{$triggers{$table}{$action}} ) {
-                my $trigger_sql = $triggers{$table}{$action}{$time}{sql};
-
-                # Parse all tagged trigger fragments
-                while( $trigger_sql =~ s{/\*\* begin (\S+) \*/\s*(.*)/\*\* end \1 \*/\s*}{}s ) {
-                    my( $name, $sql ) = ($1,$2);
-                    write_trigger_fragment_sql( $state, $name, $time, $action, $table, $sql );
-                }
-
-		# Handle any untagged trigger SQL?
-                $trigger_sql =~ s/\s*$//;
-                if( $trigger_sql ) {
-                    if( $state->{init_trigger_name} ) {
-                        write_trigger_fragment_sql( $state, $state->{init_trigger_name}, $time, $action, $table, $trigger_sql );
-                    } else {
-                        die "Found unlabeled trigger code for $time $action `$table`!\n$trigger_sql\nDo you need to specify --init-trigger-name=NAME?\n";
-                    }
-                }
-            }
-        }
-    }
-}
-
-=item do_pull($state)
-
-Handle the pull command.
-
-=cut
-
-sub do_pull ($)
-{
-    my($state) = @_;
-
-    dbi_connect( $state );
-    
-    pull_table_definitions( $state )
-        unless $state->{no_tables};
-    pull_trigger_fragments( $state )
-        unless $state->{no_triggers};
-}
-
-=item queue_create_table ( $state, $table )
-
-=cut
-
-sub queue_create_table ($$)
-{
-    my( $state, $table ) = @_;
-    my $todo = $state->{todo};
-    my $dbh = $state->{dbh};
-
-    my $sql = "CREATE TABLE `$table->{name}` (\n";
-
-    for my $col ( @{ $table->{columns} } ) {
-        $sql .= "  `$col` $table->{column_definition}{$col},\n";
+    # Read password from the command line in case it wasn't provided as an
+    # option.
+    use Term::ReadKey;
+    if( $require_password and not $opt->{connect}{password} ) {
+        $| = 1; # Autoflush stdout
+        print "Enter password: ";
+        ReadMode('noecho');
+        chomp( $password = ReadLine(0) );
+        ReadMode('restore');
+        print "\n";
+        $opt->{connect}{password} = $password;
     }
 
-    for my $key ( @{ $table->{keys} } ) {
-        $sql .= "  $table->{key_definition}{$key},\n";
-    }
-
-    $sql .= "  PRIMARY KEY (`".join('`,`', @{$table->{primary_key}} )."`)\n";
-    $sql .= ") ENGINE=$table->{engine} $table->{table_options} COMMENT=".$dbh->quote($table->{comment});
-
-    push @{$todo->{create_table}}, {
-        desc => "Create table $table->{name}.",
-        sql => $sql,
-    };
-}
-
-=item queue_table_updates( $todo, $current, $desired )
-
-=cut
-
-sub queue_table_updates ($$$)
-{
-    my($state,$current,$new) = @_;
-    my $todo = $state->{todo};
-
-    for my $col ( @{ $new->{columns} } ) {
-        if( $current->{column_definition}{$col} ) {
-            unless( $current->{column_definition}{$col} eq $new->{column_definition}{$col} ) {
-                push @{$todo->{modify_column}}, {
-                    desc => "Modify column $col in $current->{name}\n",
-                    sql => "ALTER TABLE `$current->{name}` MODIFY COLUMN `$col` $new->{column_definition}{$col}",
-                };
-            }
-        } else {
-            push @{$todo->{add_column}}, {
-                desc => "Add column $col to $current->{name}.",
-                sql => "ALTER TABLE `$current->{name}` ADD COLUMN `$col` $new->{column_definition}{$col}",
-            };
-        }
-    }
-
-    for my $key ( @{ $new->{keys} } ) {
-        if( $current->{key_definition}{$key} ) {
-            unless( $current->{key_definition}{$key} eq $new->{key_definition}{$key} ) {
-                push @{$todo->{drop_key}}, {
-                    desc => "Drop key $key on $current->{name}.",
-                    sql => "ALTER TABLE `$current->{name}` DROP KEY `$key`",
-                };
-                push @{$todo->{add_key}}, {
-                    desc => "Add key $key on $current->{name}.",
-                    sql => "ALTER TABLE `$current->{name}` ADD $new->{key_definition}{$key}",
-                };
-            }
-        } else {
-            push @{$todo->{add_key}}, {
-                desc => "Create key $key on $current->{name}.",
-                sql => "ALTER TABLE `$current->{name}` ADD $new->{key_definition}{$key}",
-            };
-        }
-    }
-
-    # FIXME What about foreign key constraints??
-}
-
-=item push_table_definition( $state, $table )
-
-=cut
-
-sub queue_push_table_definition ($$)
-{
-    my($state,$name) = @_;
-    
-    my $new_sql = read_table_sql( $state, $name );
-    my $new = parse_create_table_sql( $new_sql );
-
-    my( $current, $current_sql );
-    eval {
-        $current_sql = query_table_sql( $state, $name );
-        $current = parse_create_table_sql( $current_sql );
-    };
-
-    if( $current ) {
-        queue_table_updates( $state, $current, $new );
-    } else {
-        queue_create_table( $state, $new );
-    }
-
-}
-
-=item push_table_definitions($state)
-
-=cut
-
-sub queue_push_table_definitions
-{
-    my($state) = @_;
-
-    my @tables = @{ $state->{tables} };
-    @tables = table_names( $state )
-	unless @tables;
-
-    for my $table ( @tables ) {
-        queue_push_table_definition( $state, $table );
-    }
-}
-
-
-=item assumble_triggers( $state )
-
-=cut
-
-sub assemble_triggers ($)
-{
-    my($state) = @_;
-
-    my $dir = "$state->{directory}/trigger";
-    my $dh;
-    opendir $dh, $dir;
-
-    my %triggers = ();
-    while( my $file = readdir $dh ) {
-        my($name,$time,$action,$table) =
-            $file =~ m/^(.+)\.(before|after)\.(insert|update|delete)\.(.+)\.sql$/
-            or next;
-
-        # Slurp file.
-        local $/;
-        open my $fh, "<", "$dir/$file";
-	my $sql = <$fh>;
-	close $fh;
-
-	$triggers{$table} ||= {};
-	$triggers{$table}{$action} ||= {};
-	$triggers{$table}{$action}{$time} ||= '';
-	$triggers{$table}{$action}{$time} .= "/** begin $name */\n$sql/** end $name */\n";
-    }
-
-    return %triggers;
-}
-
-=item queue_push_trigger_definitions( $state )
-
-=cut
-
-sub queue_push_trigger_definitions ($)
-{
-    my($state) = @_;
-    my $todo = $state->{todo};
-
-    my %triggers = assemble_triggers($state);
-    my %current_triggers = pull_trigger_definitions( $state );
-
-    for my $table ( sort keys %triggers ) {
-
-        if( @{ $state->{tables} } ) {
-            # Skip triggers for table based on explicit table list.
-            next unless grep { $_ eq $table } @{ $state->{tables} };
-        }
-
-        for my $action ( sort keys %{$triggers{$table}} ) {
-            for my $time ( sort keys %{$triggers{$table}{$action}} ) {
-                my $new = $triggers{$table}{$action}{$time};
-                my $current = $current_triggers{$table}{$action}{$time};
-
-                my $create_sql = "CREATE TRIGGER `${time}_${action}_${table}` $time $action ON `$table` FOR EACH ROW BEGIN\n${new}END";
-
-                if( not $current ) {
-                    push @{$todo->{create_trigger}}, {
-                        desc => "Create $time $action on $table trigger.",
-                        sql => $create_sql,
-		    };
-                } elsif( $current->{sql} ne $new ) {
-                    push @{$todo->{drop_trigger}}, {
-                        desc => "Drop $time $action on $table trigger.",
-                        sql => "DROP TRIGGER IF EXISTS `$current->{name}`",
-		    };
-                    push @{$todo->{create_trigger}}, {
-                        desc => "Create $time $action on $table trigger.",
-                        sql => $create_sql,
-		    };
-                }
-            }
-        }
-    }
-
-    # Check if any triggers should be dropped.
-    for my $table ( sort keys %current_triggers ) {
-
-        if( @{ $state->{tables} } ) {
-            # Skip triggers for table based on explicit table list.
-            next unless grep { $_ eq $table } @{ $state->{tables} };
-        }
-
-        for my $action ( sort keys %{$current_triggers{$table}} ) {
-            for my $time ( sort keys %{$current_triggers{$table}{$action}} ) {
-                next if $triggers{$table}{$action}{$time};
-                my $trigger = $current_triggers{$table}{$action}{$time};
-
-                push @{$todo->{drop_trigger}}, {
-                    desc => "Drop $time $action on $table trigger.",
-                    sql => "DROP TRIGGER IF EXISTS `$trigger->{name}`",
-		};
-            }
-        }
-    }
-}
-
-=item do_push($state)
-
-Handle the push command.
-
-=cut
-
-sub do_push ($)
-{
-    my($state) = @_;
-    my %todo = map {($_=>[])} @TODO_ACTIONS;
-    $state->{todo} = \%todo;
-
-    dbi_connect( $state );
-    
-    queue_push_table_definitions( $state )
-        unless $state->{no_tables};
-    queue_push_trigger_definitions( $state )
-        unless $state->{no_triggers};
-
-    my $count = 0;
-    for my $action ( @TODO_ACTIONS ) {
-        for my $task ( @{$todo{$action}} ) {
-            ++$count;
-            print $task->{desc},"\n";
-	    print "\n$task->{sql}\n\n" if $VERBOSE or $DRYRUN;
-            eval {
-                $state->{dbh}->do( $task->{sql} ) unless $DRYRUN;
-            };
-            die "Error executing SQL: $@\n$task->{sql}\n" if $@;
-        }
-    }
-
-    if( $count == 0 ) {
-        print "No updates need pushed.\n";
-    }
-}
-
-=item do_make_archive($state)
-
-Handle the make-archive command.
-
-=cut
-
-sub do_make_archive ($)
-{
-    my($state) = @_;
-
-    # Detect tables by presence of revision column if option wasn't provided on
-    # the command-line.
-    my @tables_desc;
-    if( @{ $state->{tables} } ) {
-        # Get table information for all tables for which we will create/update
-        # archive tables.
-        @tables_desc = map { get_table_desc( $state, $_ ) } @{ $state->{tables} };
-    } else {
-        @tables_desc = find_data_tables_with_revision( $state );
-    }
-
-    # Check that all source tables have required columns.
-    for my $table ( @tables_desc ) {
-        check_table_is_archive_capable( $state, $table );
-    }
-
-    # Basic checks done, we should be good to go to start making and updating
-    # tables.
-    for my $table ( @tables_desc ) {
-    
-        # Make archive table description from source data table
-        my $archive_table = make_archive_table_desc( $state, $table );
-    
-        # Check if there is a current archive table.
-        my $current_archive_table;
-        eval { $current_archive_table = get_table_desc( $state, $archive_table->{name} ) };
-    
-        if( $current_archive_table ) {
-            # Check if any updates are required.
-            print "Archive table `$current_archive_table->{name}` found for `$table->{name}`.\n"
-                if $VERBOSE;
-
-            # Verify that the current archive table could be updated to new requirements.
-            check_table_updatable( $state, $current_archive_table, $archive_table );
-
-            # Update the archive table definition.
-            write_table_definition( $state, $archive_table );
-        } else {
-            print "Writing archive table `$archive_table->{name}` definition for `$table->{name}`.\n"
-                if $VERBOSE;
-            write_table_definition( $state, $archive_table );
-        }
-
-        write_archive_trigger_fragments( $state, $table, $archive_table );
-    }
+    return $opt;
 }
 
 ### main ###
 
-my $state = parse_commandline ();
+my $opt = parse_commandline ();
+my $mydbm = new DBIx::MyDatabaseMunger( $opt );
 
 eval {
-    if( $state->{command} eq 'pull' ) {
-        do_pull( $state );
-    } elsif( $state->{command} eq 'push' ) {
-        do_push( $state );
-    } elsif( $state->{command} eq 'make-archive' ) {
-        do_make_archive( $state );
+    if( $mydbm->{command} eq 'pull' ) {
+        $mydbm->do_pull();
+    } elsif( $mydbm->{command} eq 'push' ) {
+        $mydbm->do_push();
+    } elsif( $mydbm->{command} eq 'make-archive' ) {
+        $mydbm->do_make_archive();
     } else {
-        die "Unknown command `$state->{command}'\n",USAGE;
+        die "Unknown command `$mydbm->{command}'\n",USAGE;
     }
 };
-if( $@ ) { die "Aborted $state->{command} - $@" };
+if( $@ ) { die "Aborted $mydbm->{command} - $@" };
 
 exit 0;
