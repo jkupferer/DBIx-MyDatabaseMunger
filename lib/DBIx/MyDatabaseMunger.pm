@@ -1,15 +1,22 @@
+=head1 NAME
+
+DBIx::MyDatabaseMunger - MariaDB/MySQL Database Management Utility
+
+=cut
+
 package DBIx::MyDatabaseMunger;
 use strict;
 use warnings;
 use autodie;
-use Storable qw(dclone);
+use Storable qw(dclone freeze);
 
+our $VERSION = 0.001;
 our $DRYRUN = 0;
 our $VERBOSE = 0;
 
 # When running the todo list, do these things in this order.
 use constant TODO_ACTIONS => qw(
-drop_foreign_key
+drop_constraint
 drop_trigger
 drop_key
 drop_column
@@ -18,7 +25,7 @@ create_table
 add_column
 modify_column
 add_key
-add_foreign_key
+add_constraint
 create_trigger
 );
 
@@ -108,10 +115,17 @@ sub parse_create_table_sql :method
             my($key,$def) = ($3,$1);
             push @keys, $key;
             $key_definition{ $key } = $def;
-        } elsif( $line =~ m/^\s*CONSTRAINT\s+`(.*)`\s+(.*)/ ) {
-            my($con,$def) = ($1,$2);
-            push @constraints, $con;
-            $constraint_definition{ $con } = $def;
+        } elsif( $line =~ m/^\s*CONSTRAINT\s+`(.*)` FOREIGN KEY \(`(.*)`\) REFERENCES `(.*)` \(`(.*)`\) *(.*)/ ) {
+            my($name,$cols,$reftable,$refcols,$cascade_opt) = ($1,$2,$3,$4,$5);
+            my @cols = split '`,`', $cols;
+            my @refcols = split '`,`', $refcols;
+            push @constraints, $name;
+            $constraint_definition{ $name } = {
+                columns => \@cols,
+                reference_table => $reftable,
+                reference_columns => \@refcols,
+                cascade_opt => $cascade_opt,
+            };
         } else {
             warn "Don't understand line in CREATE TABLE:\n$line";
         }
@@ -126,6 +140,8 @@ sub parse_create_table_sql :method
         column_definition => \%column_definition,
         keys => \@keys,
         key_definition => \%key_definition,
+        constraints => \@constraints,
+        constraint_definition => \%constraint_definition,
         primary_key => \@primary_key,
     };
 }
@@ -771,6 +787,48 @@ sub queue_create_table :method
         desc => "Create table $table->{name}.",
         sql => $sql,
     };
+
+    for my $constraint ( @{$table->{constraints}} ) {
+        $self->queue_add_table_constraint($table,$constraint);
+    }
+}
+
+=item $o->queue_add_table_constraint ( $table, $constraint )
+
+=cut
+
+sub queue_add_table_constraint :method
+{
+    my $self = shift;
+    my($table,$constraint) = @_;
+    my $todo = $self->{todo};
+
+    my $def = $table->{constraint_definition}{$constraint};
+    push @{$todo->{add_constraint}}, {
+        desc => "Add constraint $constraint on $table->{name}.",
+        sql => "ALTER TABLE `$table->{name}` ADD CONSTRAINT `$constraint` FOREIGN KEY (`".join('`,`',@{$def->{columns}})."`) REFERENCES `$def->{reference_table}` (`".join('`,`',@{$def->{reference_columns}},)."`) ".$def->{cascade_opt},
+    };
+
+    return $self;
+}
+
+=item $o->queue_drop_table_constraint ( $table, $constraint )
+
+=cut
+
+sub queue_drop_table_constraint :method
+{
+    my $self = shift;
+    my($table,$constraint) = @_;
+    my $todo = $self->{todo};
+
+    my $def = $table->{constraint_definition}{$constraint};
+    push @{$todo->{drop_constraint}}, {
+        desc => "Drop constraint $constraint on $table->{name}.",
+        sql => "ALTER TABLE `$table->{name}` DROP FOREIGN KEY `$constraint`",
+    };
+
+    return $self;
 }
 
 =item $o->queue_table_updates( $current, $desired )
@@ -819,7 +877,18 @@ sub queue_table_updates :method
         }
     }
 
-    # FIXME What about foreign key constraints??
+    for my $constraint ( @{$new->{constraints}} ) {
+        if( ! $current->{constraint_definition}{$constraint}
+        or freeze $current->{constraint_definition}{$constraint} ne freeze $new->{constraint_definition}{$constraint} ) {
+            $self->queue_drop_table_constraint($current,$constraint)
+                if $current->{constraint_definition}{$constraint};
+            $self->queue_add_table_constraint($new,$constraint);
+        }
+    }
+    for my $constraint ( @{$current->{constraints}} ) {
+        next if $new->{constraint_definition}{$constraint};
+        $self->queue_drop_table_constraint($current,$constraint);
+    }
 }
 
 =item $o->push_table_definition( $table )
@@ -875,6 +944,7 @@ sub assemble_triggers :method
     my $self = shift;
 
     my $dir = "$self->{dir}/trigger";
+    return () unless -d $dir;
     my $dh;
     opendir $dh, $dir;
 

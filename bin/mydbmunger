@@ -10,7 +10,6 @@ use strict;
 use warnings;
 use autodie;
 
-use lib 'lib';
 use DBIx::MyDatabaseMunger ();
 
 use constant USAGE => <<EOF;
