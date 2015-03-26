@@ -879,7 +879,7 @@ sub queue_table_updates :method
 
     for my $constraint ( @{$new->{constraints}} ) {
         if( ! $current->{constraint_definition}{$constraint}
-        or freeze $current->{constraint_definition}{$constraint} ne freeze $new->{constraint_definition}{$constraint} ) {
+        or freeze($current->{constraint_definition}{$constraint}) ne freeze($new->{constraint_definition}{$constraint}) ) {
             $self->queue_drop_table_constraint($current,$constraint)
                 if $current->{constraint_definition}{$constraint};
             $self->queue_add_table_constraint($new,$constraint);
