@@ -290,11 +290,11 @@ my $mydbm = new DBIx::MyDatabaseMunger( $opt );
 
 eval {
     if( $mydbm->{command} eq 'pull' ) {
-        $mydbm->do_pull();
+        $mydbm->pull();
     } elsif( $mydbm->{command} eq 'push' ) {
-        $mydbm->do_push();
+        $mydbm->push();
     } elsif( $mydbm->{command} eq 'make-archive' ) {
-        $mydbm->do_make_archive();
+        $mydbm->make_archive();
     } else {
         die "Unknown command `$mydbm->{command}'\n",USAGE;
     }

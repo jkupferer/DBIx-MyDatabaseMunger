@@ -2,6 +2,36 @@
 
 DBIx::MyDatabaseMunger - MariaDB/MySQL Database Management Utility
 
+=head1 SYNOPSIS
+
+Normal interface is through the mydbmunger command, but this class can also
+be used directly.
+
+    use DBIx::MyDatabaseMunger ();
+    $dbmunger = new DBIx::MyDatabaseMunger ({
+        connect => {
+            schema => 'database',
+            host => 'mysql.example.com',
+            user => 'username',
+            password => 'p4ssw0rd',
+        },
+        colname => {
+            ctime => 'create_datetime',
+            mtime => 'tstmp',
+        },
+    });
+    $dbmunger->pull();
+    $dbmunger->make_archive();
+    $dbmunger->push();
+        
+=head1 DESCRIPTION
+
+A collection of utilities to simplify complex database management tasks.
+
+=head1 METHODS
+
+=over 4
+
 =cut
 
 package DBIx::MyDatabaseMunger;
@@ -741,13 +771,13 @@ sub pull_trigger_fragments :method
     }
 }
 
-=item $o->do_pull ()
+=item $o->pull ()
 
 Handle the pull command.
 
 =cut
 
-sub do_pull :method
+sub pull :method
 {
     my $self = shift;
 
@@ -1036,13 +1066,13 @@ sub queue_push_trigger_definitions :method
     }
 }
 
-=item $o->do_push ()
+=item $o->push ()
 
 Handle the push command.
 
 =cut
 
-sub do_push :method
+sub push :method
 {
     my $self = shift;
     my %todo = map {($_=>[])} TODO_ACTIONS;
@@ -1073,13 +1103,13 @@ sub do_push :method
     }
 }
 
-=item $o->do_make_archive ()
+=item $o->make_archive ()
 
 Handle the make-archive command.
 
 =cut
 
-sub do_make_archive :method
+sub make_archive :method
 {
     my $self = shift;
 
