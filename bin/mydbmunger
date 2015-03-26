@@ -34,8 +34,6 @@ GENERAL OPTIONS:
                       listed in this help documentation.
   -D, --dir=PATH      Directory in which to read and write database information.
                       Default is current directory.
-      --no-tables     Don't do anything with triggers.
-      --no-triggers   Don't do anything with triggers.
   -t, --table=TABLE[,TABLE]...
                       Specify for which tables to perform the given COMMAND. If
                       not provided, then we will attempt to detect suitable
@@ -164,8 +162,6 @@ sub parse_commandline
     # General options.
     my $config;
     my $dir;
-    my $no_tables;
-    my $no_triggers;
     my @tables;
     # $VERBOSE is global in DBIx::myDatabaseMunger
 
@@ -193,8 +189,6 @@ sub parse_commandline
         # General options.
         "c|config=s" => \$config,
         "D|dir=s" => \$dir,
-        "no-tables" => \$no_tables,
-        "no-triggers" => \$no_triggers,
         "t|table=s" => \@tables,
         "v|verbose" => \$DBIx::MyDatabaseMunger::VERBOSE,
         # pull/push options
@@ -259,8 +253,6 @@ sub parse_commandline
         updidvar => $updidvar,
         archive_name_pattern => $archive_name_pattern,
         init_trigger_name => $init_trigger_name,
-        no_tables => $no_tables,
-        no_triggers => $no_triggers,
     };
 
     if( $config ) {

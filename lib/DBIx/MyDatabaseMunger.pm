@@ -28,10 +28,6 @@ be used directly.
 
 A collection of utilities to simplify complex database management tasks.
 
-=head1 METHODS
-
-=over 4
-
 =cut
 
 package DBIx::MyDatabaseMunger;
@@ -59,7 +55,101 @@ add_constraint
 create_trigger
 );
 
-=item $o->table_names ()
+=head1 CONSTRUCTOR
+
+The constructor C<new DBIx::MyDatabaseMunger()> takes a hash reference of
+options. These options include.
+
+=over 4
+
+=item C<archive_name_pattern>
+
+Naming convention for archive tables. Takes a wildcard, '%' that will be the
+source table name.
+
+Default: C<%Archive>
+
+=item C<colname>
+
+A hash of column names for special handling. Column names include:
+
+=over 4
+
+=item C<action>
+
+Column used to record action in archive table. Column should be an enumeration
+type with values 'insert', 'update', or 'delete'.
+
+=item C<ctime>
+
+Column used to record when a record is initially created. If not specified
+then this functionality will not be implemented.
+
+=item C<dbuser>
+
+Column used to track dabase connection C<USER()>, which indicates the user and
+host that is connected to the database.
+
+=item C<mtime>
+
+Column used to record when a record was last changed. If not specified then
+this functionality will not be implemented.
+
+=item C<revision>
+
+Revision count column. Must be an integer type.
+
+=item C<stmt>
+
+The column used to track the SQL statement responsible for a table change.
+
+=item C<updid>
+
+The column used to store the value of the variable indicated by C<updidvar>.
+
+=back
+
+=item C<dir>
+
+Directory in which to save table and trigger definitions.
+
+Default: C<.>
+
+=item C<updidvar>
+
+Connection variable to be used by the calling application to track the reason
+for table updates, inserts, and deletes.
+
+Default: C<@updid>
+
+=back
+
+=cut
+
+sub new
+{
+    my $class = shift;
+
+    my $self = dclone( $_[0] );
+
+    # Apply default values.
+    $self->{dir} ||= '.';
+    $self->{archive_name_pattern} ||= '%Archive';
+    $self->{updidvar} ||= '@updid';
+    $self->{colname}{action}      ||= 'action';
+    $self->{colname}{dbuser}      ||= 'dbuser';
+    $self->{colname}{revision}    ||= 'revision';
+    $self->{colname}{stmt}        ||= 'stmt';
+    $self->{colname}{updid}       ||= 'updid';
+
+    return bless $self, $class;
+}
+
+=head1 METHODS
+
+=over 4
+
+=item C<table_names ()>
 
 Return a list of all saved table names.
 
@@ -596,29 +686,6 @@ sub write_archive_trigger_fragments :method
 
 }
 
-=item DBIx::MyDatabaseMunger->new( \%opt )
-
-=cut
-
-sub new
-{
-    my $class = shift;
-
-    my $self = dclone( $_[0] );
-
-    # Apply default values.
-    $self->{dir} ||= '.';
-    $self->{updidvar} ||= '@updid';
-    $self->{archive_name_pattern} ||= '%Archive';
-    $self->{colname}{action}      ||= 'action';
-    $self->{colname}{dbuser}      ||= 'dbuser';
-    $self->{colname}{revision}    ||= 'revision';
-    $self->{colname}{stmt}        ||= 'stmt';
-    $self->{colname}{updid}       ||= 'updid';
-
-    return bless $self, $class;
-}
-
 =item $o->dbi_connect ()
 
 Connect to the database.
@@ -783,10 +850,8 @@ sub pull :method
 
     $self->dbi_connect();
     
-    $self->pull_table_definitions()
-        unless $self->{no_tables};
-    $self->pull_trigger_fragments()
-        unless $self->{no_triggers};
+    $self->pull_table_definitions();
+    $self->pull_trigger_fragments();
 }
 
 =item $o->queue_create_table ( $table )
@@ -1080,10 +1145,8 @@ sub push :method
 
     $self->dbi_connect();
     
-    $self->queue_push_table_definitions()
-        unless $self->{no_tables};
-    $self->queue_push_trigger_definitions()
-        unless $self->{no_triggers};
+    $self->queue_push_table_definitions();
+    $self->queue_push_trigger_definitions();
 
     my $count = 0;
     for my $action ( TODO_ACTIONS ) {
@@ -1159,5 +1222,20 @@ sub make_archive :method
         $self->write_archive_trigger_fragments( $table, $archive_table );
     }
 }
+
+=back
+
+=head1 AUTHOR
+
+Johnathan Kupferer <jtk@uic.edu>
+
+=head1 COPYRIGHT
+
+Copyright (C) 2015 The University of Illinois at Chicago. All Rights Reserved.
+
+This module is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+=cut
 
 1;
