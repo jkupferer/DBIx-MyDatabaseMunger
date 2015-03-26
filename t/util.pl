@@ -40,6 +40,14 @@ sub clear_database ()
     }
 }
 
+sub clear_directories ()
+{
+    unlink glob "table/*";
+    rmdir "table";
+    unlink glob "trigger/*";
+    unlink "trigger";
+}
+
 sub run_mysql ($)
 {
     my($file) = shift;
