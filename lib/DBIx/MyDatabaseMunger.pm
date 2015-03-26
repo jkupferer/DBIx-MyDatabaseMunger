@@ -42,7 +42,7 @@ sub table_names :method
 
     opendir my $dh, "$self->{dir}/table";
     while( my $table_sql = readdir $dh ) {
-        my($name) = $table_sql =~ m/^(.*)\.sql/
+        my($name) = $table_sql =~ m/^(.*)\.sql$/
             or next;
         push @names, $name;
     };
