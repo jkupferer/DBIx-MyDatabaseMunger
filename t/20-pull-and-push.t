@@ -21,7 +21,7 @@ my $ret;
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "run pull" );
 
-$ret = system(qw(md5sum -c t/pull-tables-expected.md5));
+$ret = system(qw(md5sum -c t/20-pull-and-push.md5));
 ok( $ret == 0, "check pull md5" );
 
 clear_database();
@@ -34,7 +34,7 @@ clear_directories();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull again" );
 
-$ret = system(qw(md5sum -c t/pull-tables-expected.md5));
+$ret = system(qw(md5sum -c t/20-pull-and-push.md5));
 ok( $ret == 0, "check pull md5 again" );
 
 exit 0;

@@ -1,6 +1,6 @@
 38099c4690868850224fcb06bac1f131  table/ServiceArchive.sql
 56fff3e152a0405b28bf836f3d474d32  table/Service.sql
-3106a7e782dce1fcdf5df4ddb45fd042  table/User.sql
+b3c62f67fb3f5065c3abb2e37df58c03  table/User.sql
 704e840953172355a97578e8d4d24170  trigger/20-archive.before.insert.Service.sql
 b6e8eb576823e32bd0fac8b31909776a  trigger/20-archive.before.update.Service.sql
 26f5a6406075962452fa467d6ccf3f43  trigger/40-archive.after.delete.Service.sql

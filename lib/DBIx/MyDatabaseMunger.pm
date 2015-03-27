@@ -201,6 +201,9 @@ sub parse_create_table_sql :method
         or die "Table options lack ENGINE specification?!";
     my $engine = $1;
 
+    # Drop data about AUTO_INCREMENT
+    $table_options =~ s/AUTO_INCREMENT=(\d+)\s*//;
+
     # Extract the COMMENT and undo mysql ' quoting. We shouldn't have to deal
     # with weird characters or backslashes in comments, so let's keep it
     # simple.
@@ -743,6 +746,9 @@ sub pull_table_definition :method
     print "Pulling table definition for `$name`\n" if $VERBOSE;
  
     my $sql = $self->query_table_sql( $name );
+
+    # Drop data about AUTO_INCREMENT
+    $sql =~ s/(\).*)AUTO_INCREMENT=\d+\s*(.*)/$1$2/;
 
     $self->write_table_sql( $name, $sql );
 }

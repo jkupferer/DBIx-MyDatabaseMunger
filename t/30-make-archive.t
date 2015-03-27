@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 7;
+use Test::More tests => 6;
 
 use lib 'lib';
 use_ok('DBIx::MyDatabaseMunger');
@@ -21,9 +21,6 @@ my $ret;
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "run pull" );
 
-$ret = system(qw(md5sum -c t/pull-tables-expected.md5));
-ok( $ret == 0, "check pull md5" );
-
 $ret = system( @cmdroot, "-t", "Service", "make-archive" );
 ok( $ret == 0, "Make archive table for Service" );
 
@@ -36,6 +33,6 @@ $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull again" );
 
 $ret = system(qw(md5sum -c t/30-make-archive.md5));
-ok( $ret == 0, "check pull md5 again" );
+ok( $ret == 0, "check md5" );
 
 exit 0;

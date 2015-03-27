@@ -20,7 +20,7 @@ my @cmdroot = ("perl","$FindBin::RealBin/../bin/mydbmunger","-c",$conf_file);
 my $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "run pull" );
 
-$ret = system(qw(md5sum -c t/pull-tables-expected.md5));
+$ret = system(qw(md5sum -c t/10-pull-tables.md5));
 ok( $ret == 0, "check pull md5" );
 
 exit 0;
