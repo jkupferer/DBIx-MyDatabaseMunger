@@ -876,7 +876,9 @@ sub queue_create_table :method
     }
 
     $sql .= "  PRIMARY KEY (`".join('`,`', @{$table->{primary_key}} )."`)\n";
-    $sql .= ") ENGINE=$table->{engine} $table->{table_options} COMMENT=".$dbh->quote($table->{comment});
+    $sql .= ") ENGINE=$table->{engine} $table->{table_options}";
+    $sql .= " COMMENT=".$dbh->quote($table->{comment})
+        if $table->{comment};
 
     push @{$todo->{create_table}}, {
         desc => "Create table $table->{name}.",
