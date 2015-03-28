@@ -644,7 +644,8 @@ sub write_archive_trigger_fragments :method
     my @scols = grep { $colname->{$_} } sort keys %$colname;
 
     $fragment =
-        "SET \@stmt = ( SELECT info FROM INFORMATION_SCHEMA.PROCESSLIST WHERE id = CONNECTION_ID() );\n" .
+        "BEGIN DECLARE stmt longtext;\n" .
+        "SET stmt = ( SELECT info FROM INFORMATION_SCHEMA.PROCESSLIST WHERE id = CONNECTION_ID() );\n" .
         "INSERT INTO `$archive_table->{name}` (\n" .
         "  `".join( '`, `', @cols, map { $colname->{$_} } @scols )."`\n".
         ") VALUES (\n";
@@ -657,8 +658,8 @@ sub write_archive_trigger_fragments :method
             $_ eq 'action'  ? "'insert'" :
             $_ eq 'updid'   ? $self->{updidvar} :
             $_ eq 'dbuser'  ? "USER()" :
-            $_ eq 'stmt'    ? '@stmt' : die "BUG! $_ unhandled!"
-        } @scols )."\n);\n"
+            $_ eq 'stmt'    ? 'stmt' : die "BUG! $_ unhandled!"
+        } @scols )."\n);\nEND;\n"
     );
 
     # After update
@@ -669,8 +670,8 @@ sub write_archive_trigger_fragments :method
             $_ eq 'action'  ? "'update'" :
             $_ eq 'updid'   ? $self->{updidvar} :
             $_ eq 'dbuser'  ? "USER()" :
-            $_ eq 'stmt'    ? '@stmt' : die "BUG! $_ unhandled!"
-        } @scols )."\n);\n"
+            $_ eq 'stmt'    ? 'stmt' : die "BUG! $_ unhandled!"
+        } @scols )."\n);\nEND;\n"
     );
 
     # After delete
@@ -683,8 +684,8 @@ sub write_archive_trigger_fragments :method
             $_ eq 'dbuser'   ? "USER()" :
             $_ eq 'mtime'    ? "CURRENT_TIMESTAMP" :
             $_ eq 'revision' ? "1 + OLD.`$colname->{revision}`" :
-            $_ eq 'stmt'     ? '@stmt' : die "BUG! $_ unhandled!"
-        } @scols )."\n);\n"
+            $_ eq 'stmt'     ? 'stmt' : die "BUG! $_ unhandled!"
+        } @scols )."\n);\nEND;\n"
     );
 
 }
