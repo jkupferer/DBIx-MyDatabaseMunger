@@ -122,7 +122,7 @@ sub read_config ($$)
     };
     die "Error reading configuration JSON: $@\n" if $@;
 
-    for my $o (qw(archive-name-pattern dir init-trigger-name schema updidvar)) {
+    for my $o (qw(archive-name-pattern dir init-trigger-name schema updidvar verbose)) {
         my $f = $o;
         $f =~ tr/\-/_/;
         $opt->{$f} = $conf->{$o}
@@ -131,6 +131,12 @@ sub read_config ($$)
     for my $f (qw(host password port schema user)) {
         $opt->{connect}{$f} = $conf->{$f}
             if defined $conf->{$f} and not defined $opt->{connect}{$f};
+    }
+    for my $f (qw(actioncol ctime dbusercol mtime revision stmtcol updidcol)) {
+        my $col = $f;
+        $col =~ s/col$//;
+        $opt->{colname}{$col} = $conf->{$f}
+            if defined $conf->{$f} and not defined $opt->{colname}{$col};
     }
     if( $conf->{tables} and not @{ $opt->{tables} } ) {
         $opt->{tables} = $conf->{tables};
