@@ -1,8 +1,8 @@
 6df7fabfd449cfb84026df87122588c4  table/ServiceArchive.sql
 b48d7c3771fb4170704b7c0d50e70d35  table/Service.sql
 b3c62f67fb3f5065c3abb2e37df58c03  table/User.sql
-704e840953172355a97578e8d4d24170  trigger/20-archive.before.insert.Service.sql
-b6e8eb576823e32bd0fac8b31909776a  trigger/20-archive.before.update.Service.sql
-26e0a048a826ef32fe04fd370867d004  trigger/40-archive.after.delete.Service.sql
-e7d2a027da30988a4547d1cf816aa71b  trigger/40-archive.after.insert.Service.sql
-a2a82c3c2b44f4200a1001c1f6ea8ce0  trigger/40-archive.after.update.Service.sql
+b1fd39a402869a4bf8182e977ddc4108  trigger/20-archive.before.insert.Service.sql
+979c773099ce6457b5e20dda40d0d72e  trigger/20-archive.before.update.Service.sql
+3cceb35aa64b7f1cf014112c68eb7973  trigger/40-archive.after.delete.Service.sql
+90883afc6172e81afec111952c98adf6  trigger/40-archive.after.insert.Service.sql
+5e6d9da94800a43083f6b30c0e379157  trigger/40-archive.after.update.Service.sql

@@ -373,7 +373,7 @@ sub check_table_is_archive_capable :method
     for my $timecol (qw(mtime ctime)) {
         my $col = $self->{colname}{$timecol} or next;
         $coldef = $table->{column_definition}{$col}
-            or die "$table->{name} lacks $col column.\n";
+            or next;
         $coldef =~ m/\b(timestamp|datetime)\b/
             or die "$table->{name} column $col is neither a timestamp or datetime field.\n";
     }
@@ -616,9 +616,9 @@ sub write_archive_trigger_fragments :method
     # Before insert
     $fragment = "SET NEW.`$colname->{revision}` = 0;\n";
     $fragment .= "SET NEW.`$colname->{ctime}` = CURRENT_TIMESTAMP;\n"
-        if $colname->{ctime};
+        if $colname->{ctime} and $table->{column_definition}{ $colname->{ctime} };
     $fragment .= "SET NEW.`$colname->{mtime}` = CURRENT_TIMESTAMP;\n"
-        if $colname->{mtime};
+        if $colname->{mtime} and $table->{column_definition}{ $colname->{mtime} };
     $fragment .= "SET NEW.`$colname->{updid}` = $self->{updidvar};\n"
         if $table->{column_definition}{ $colname->{updid} };
     $self->write_trigger_fragment_sql( "20-archive","before","insert",$table->{name},$fragment);
@@ -627,9 +627,9 @@ sub write_archive_trigger_fragments :method
     # Before update
     $fragment = "SET NEW.`$colname->{revision}` = OLD.`$colname->{revision}` + 1;\n";
     $fragment .= "SET NEW.`$colname->{ctime}` = OLD.`$colname->{ctime}`;\n"
-        if $colname->{ctime};
+        if $colname->{ctime} and $table->{column_definition}{ $colname->{ctime} };
     $fragment .= "SET NEW.`$colname->{mtime}` = CURRENT_TIMESTAMP;\n"
-        if $colname->{mtime};
+        if $colname->{mtime} and $table->{column_definition}{ $colname->{mtime} };
     $fragment .= "SET NEW.`$colname->{updid}` = $self->{updidvar};\n"
         if $table->{column_definition}{ $colname->{updid} };
     $self->write_trigger_fragment_sql( "20-archive","before","update",$table->{name},$fragment);
@@ -642,6 +642,10 @@ sub write_archive_trigger_fragments :method
 
     # Special columns
     my @scols = grep { $colname->{$_} } sort keys %$colname;
+    # Drop handling of ctime if not is table.
+    if( $colname->{ctime} and not $table->{column_definition}{ $colname->{ctime} } ) {
+        @scols = grep { $_ ne 'ctime' } @scols;
+    }
 
     $fragment =
         "BEGIN DECLARE stmt longtext;\n" .
