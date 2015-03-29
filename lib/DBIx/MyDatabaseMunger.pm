@@ -1057,7 +1057,8 @@ sub assemble_triggers :method
     opendir $dh, $dir;
 
     my %triggers = ();
-    while( my $file = readdir $dh ) {
+    my @files = sort readdir $dh;
+    for my $file ( @files ) {
         my($name,$time,$action,$table) =
             $file =~ m/^(.+)\.(before|after)\.(insert|update|delete)\.(.+)\.sql$/
             or next;
