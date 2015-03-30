@@ -36,7 +36,7 @@ use warnings;
 use autodie;
 use Storable qw(dclone freeze);
 
-our $VERSION = 0.004;
+our $VERSION = 0.005;
 our $DRYRUN = 0;
 our $VERBOSE = 0;
 
