@@ -244,6 +244,7 @@ sub parse_create_table_sql :method
             my @refcols = split '`,`', $refcols;
             push @constraints, $name;
             $constraint_definition{ $name } = {
+                name => $name,
                 columns => \@cols,
                 reference_table => $reftable,
                 reference_columns => \@refcols,
@@ -750,11 +751,16 @@ sub pull_table_definition :method
 
     print "Pulling table definition for `$name`\n" if $VERBOSE;
  
+    # Get MySQL create table sql
     my $sql = $self->query_table_sql( $name );
 
-    # Drop data about AUTO_INCREMENT
-    $sql =~ s/(\).*)AUTO_INCREMENT=\d+\s*(.*)/$1$2/;
+    # Parse create table sql to local representation.
+    my $table = $self->parse_create_table_sql( $sql );
 
+    # Regenerate SQL from local representation.
+    $sql = $self->create_table_sql( $table );
+
+    # Save table sql.
     $self->write_table_sql( $name, $sql );
 }
 
@@ -876,20 +882,7 @@ sub queue_create_table :method
     my $todo = $self->{todo};
     my $dbh = $self->{dbh};
 
-    my $sql = "CREATE TABLE `$table->{name}` (\n";
-
-    for my $col ( @{ $table->{columns} } ) {
-        $sql .= "  `$col` $table->{column_definition}{$col},\n";
-    }
-
-    for my $key ( @{ $table->{keys} } ) {
-        $sql .= "  $table->{key_definition}{$key},\n";
-    }
-
-    $sql .= "  PRIMARY KEY (`".join('`,`', @{$table->{primary_key}} )."`)\n";
-    $sql .= ") ENGINE=$table->{engine} $table->{table_options}";
-    $sql .= " COMMENT=".$dbh->quote($table->{comment})
-        if $table->{comment};
+    my $sql = $self->create_table_sql( $table, { no_constraints => 1 } );
 
     push @{$todo->{create_table}}, {
         desc => "Create table $table->{name}.",
@@ -899,6 +892,58 @@ sub queue_create_table :method
     for my $constraint ( @{$table->{constraints}} ) {
         $self->queue_add_table_constraint($table,$constraint);
     }
+}
+
+=item $o->create_table_sql ( $table )
+
+=cut
+
+sub create_table_sql :method    
+{
+    my $self = shift;
+    my( $table, $opt ) = @_;
+
+    my $sql = "CREATE TABLE `$table->{name}` (\n";
+
+    for my $col ( @{ $table->{columns} } ) {
+        $sql .= "  `$col` $table->{column_definition}{$col},\n";
+    }
+
+    for my $key ( sort @{ $table->{keys} } ) {
+        $sql .= "  $table->{key_definition}{$key},\n";
+    }
+
+    unless( $opt->{no_constraints} ) {
+        for my $constraint ( sort @{$table->{constraints}} ) {
+            $sql .= "  ".$self->constraint_sql( $table->{constraint_definition}{$constraint} ).",\n";
+        }
+    }
+
+    $sql .= "  PRIMARY KEY (`".join('`,`', @{$table->{primary_key}} )."`)\n";
+    $sql .= ") ENGINE=$table->{engine} $table->{table_options}";
+    if( $table->{comment} ) {
+        my $comment = $table->{comment};
+        $comment =~ s/'/''/g;
+        $sql .= " COMMENT='$comment'";
+    }
+    $sql .= "\n";
+
+    return $sql;
+}
+
+=item $o->constraint_sql ( $constraint )
+
+=cut
+
+sub constraint_sql : method
+{
+    my $self = shift;
+    my($constraint) = @_;
+    return "CONSTRAINT `$constraint->{name}` FOREIGN KEY (`"
+        . join('`,`',@{$constraint->{columns}})
+        ."`) REFERENCES `$constraint->{reference_table}` (`"
+        .join('`,`',@{$constraint->{reference_columns}})
+        ."`) ".$constraint->{cascade_opt};
 }
 
 =item $o->queue_add_table_constraint ( $table, $constraint )
@@ -914,7 +959,7 @@ sub queue_add_table_constraint :method
     my $def = $table->{constraint_definition}{$constraint};
     push @{$todo->{add_constraint}}, {
         desc => "Add constraint $constraint on $table->{name}.",
-        sql => "ALTER TABLE `$table->{name}` ADD CONSTRAINT `$constraint` FOREIGN KEY (`".join('`,`',@{$def->{columns}})."`) REFERENCES `$def->{reference_table}` (`".join('`,`',@{$def->{reference_columns}},)."`) ".$def->{cascade_opt},
+        sql => "ALTER TABLE `$table->{name}` ADD ".$self->constraint_sql( $def ),
     };
 
     return $self;
