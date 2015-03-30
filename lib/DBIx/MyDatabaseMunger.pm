@@ -994,7 +994,8 @@ sub queue_table_updates :method
     my($current,$new) = @_;
     my $todo = $self->{todo};
 
-    for my $col ( @{ $new->{columns} } ) {
+    for( my $i=0; $i < @{ $new->{columns} }; ++$i ) {
+        my $col = $new->{columns}[$i];
         if( $current->{column_definition}{$col} ) {
             unless( $current->{column_definition}{$col} eq $new->{column_definition}{$col} ) {
                 push @{$todo->{modify_column}}, {
@@ -1005,7 +1006,7 @@ sub queue_table_updates :method
         } else {
             push @{$todo->{add_column}}, {
                 desc => "Add column $col to $current->{name}.",
-                sql => "ALTER TABLE `$current->{name}` ADD COLUMN `$col` $new->{column_definition}{$col}",
+                sql => "ALTER TABLE `$current->{name}` ADD COLUMN `$col` $new->{column_definition}{$col} ".($i == 0 ? "BEFORE `$new->{columns}[1]`" : "AFTER `".$new->{columns}[$i-1]."`"),
             };
         }
     }

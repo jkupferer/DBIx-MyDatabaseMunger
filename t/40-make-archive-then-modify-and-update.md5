@@ -1,5 +1,5 @@
-1994f9b0bf1ef3b0bce3be6f4b57f944  table/ServiceArchive.sql
-7b9bcf79ddfcea19c88e00778bfb2f1f  table/Service.sql
+dbf35fa4c7bb5cfd0fb7126efd700ecb  table/ServiceArchive.sql
+fb840ee869e5f8c3fac0d7f1ec9ed28b  table/Service.sql
 f1198634a99b3f0e4fa792f6ebbd920a  table/User.sql
 b1fd39a402869a4bf8182e977ddc4108  trigger/20-archive.before.insert.Service.sql
 979c773099ce6457b5e20dda40d0d72e  trigger/20-archive.before.update.Service.sql
