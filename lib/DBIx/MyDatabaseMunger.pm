@@ -44,6 +44,7 @@ our $VERBOSE = 0;
 use constant TODO_ACTIONS => qw(
 drop_constraint
 drop_trigger
+drop_procedure
 drop_key
 drop_column
 drop_table
@@ -52,6 +53,7 @@ add_column
 modify_column
 add_key
 add_constraint
+create_procedure
 create_trigger
 );
 
@@ -855,6 +857,49 @@ sub pull_trigger_fragments :method
     }
 }
 
+=item $o->pull_procedures ()
+
+=cut
+
+sub pull_procedures : method
+{
+    my $self = shift;
+    my $dbh = $self->{dbh};
+
+    my $list_sth = $dbh->prepare( 'SHOW PROCEDURE STATUS' );
+    $list_sth->execute();
+
+    while( my $procedure = $list_sth->fetchrow_hashref() ) {
+        my $name = $procedure->{Name};
+
+        my $desc_sth = $dbh->prepare( "SHOW CREATE PROCEDURE `$name`" );
+        $desc_sth->execute();
+        my $desc = $desc_sth->fetchrow_hashref();
+
+        $self->write_procedure_sql( $name, $desc->{'Create Procedure'} );
+    }
+
+}
+
+=item $o->write_procedure_sql( $name, $sql )
+
+=cut
+
+sub write_procedure_sql : method
+{
+    my $self = shift;
+    my($name,$sql) = @_;
+    my $fh;
+    
+    # Make table directory if required.
+    mkdir "$self->{dir}/procedure"
+        unless -d "$self->{dir}/procedure";
+
+    open $fh, ">", "$self->{dir}/procedure/$name.sql";
+    print $fh $sql;
+    close $fh;
+}
+
 =item $o->pull ()
 
 Handle the pull command.
@@ -869,6 +914,7 @@ sub pull :method
     
     $self->pull_table_definitions();
     $self->pull_trigger_fragments();
+    $self->pull_procedures();
 }
 
 =item $o->queue_create_table ( $table )

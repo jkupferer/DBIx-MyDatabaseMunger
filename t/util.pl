@@ -24,6 +24,13 @@ my $dbh = DBI->connect($dsn,$conf->{user},$conf->{password},{RaiseError=>1});
 sub clear_database ()
 {
     my $sth;
+
+    # Drop all procedures...
+    $sth = $dbh->prepare("SHOW PROCEDURE STATUS");
+    $sth->execute();
+    while( my $procedure = $sth->fetchrow_hashref ) {
+        $dbh->do("DROP PROCEDURE `$procedure->{Name}`");
+    }
     
     # Drop all constraints...
     $sth = $dbh->prepare("SELECT TABLE_NAME, CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA=? AND REFERENCED_TABLE_NAME IS NOT NULL");

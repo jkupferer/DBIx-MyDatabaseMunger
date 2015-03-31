@@ -23,3 +23,11 @@ CREATE TABLE `Service` (
   KEY `Service_owner` (`owner_id`),
   CONSTRAINT `Service_owner` FOREIGN KEY (`owner_id`) REFERENCES `User` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='A User''s Service';
+
+delimiter //
+CREATE PROCEDURE user_count (OUT number INT)
+BEGIN
+    SELECT COUNT(*) FROM User;
+END //
+delimiter ;
+
