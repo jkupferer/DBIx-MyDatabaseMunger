@@ -6,3 +6,4 @@ b1fd39a402869a4bf8182e977ddc4108  trigger/20-archive.before.insert.Service.sql
 cbdd7eb2449d5ed7f9d3f38bc412e9c6  trigger/40-archive.after.delete.Service.sql
 12606ab2d1ed28692195fa512c09e379  trigger/40-archive.after.insert.Service.sql
 73ece0a6ea9da77d357caa57f9aabbda  trigger/40-archive.after.update.Service.sql
+86f8c7fdfcd9b6d2602e5e14b44b4f9f  procedure/user_count.sql

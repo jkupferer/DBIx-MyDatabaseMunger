@@ -857,6 +857,24 @@ sub pull_trigger_fragments :method
     }
 }
 
+=item $o->pull_procedure_sql ( $name )
+
+=cut
+
+sub pull_procedure_sql : method
+{
+    my $self = shift;
+    my($name) = @_;
+    my $dbh = $self->{dbh};
+
+    my $desc_sth = $dbh->prepare( "SHOW CREATE PROCEDURE `$name`" );
+    $desc_sth->execute();
+    my $desc = $desc_sth->fetchrow_hashref();
+    my $sql = $desc->{'Create Procedure'};
+    $sql .= "\n" unless $sql =~ m/\n$/;
+    return $sql;
+}
+
 =item $o->pull_procedures ()
 
 =cut
@@ -871,12 +889,9 @@ sub pull_procedures : method
 
     while( my $procedure = $list_sth->fetchrow_hashref() ) {
         my $name = $procedure->{Name};
+        my $sql = $self->pull_procedure_sql( $name );
 
-        my $desc_sth = $dbh->prepare( "SHOW CREATE PROCEDURE `$name`" );
-        $desc_sth->execute();
-        my $desc = $desc_sth->fetchrow_hashref();
-
-        $self->write_procedure_sql( $name, $desc->{'Create Procedure'} );
+        $self->write_procedure_sql( $name, $sql );
     }
 
 }
@@ -1237,6 +1252,114 @@ sub queue_push_trigger_definitions :method
     }
 }
 
+=item $o->procedure_names()
+
+=cut
+
+sub procedure_names
+{
+    my $self = shift;
+    my @names;
+
+    opendir my $dh, "$self->{dir}/procedure";
+    while( my $sql = readdir $dh ) {
+        my($name) = $sql =~ m/^(.*)\.sql$/
+            or next;
+        push @names, $name;
+    };
+
+    return @names;
+}
+
+=item $o->read_procedure_sql ( $name )
+
+=cut
+
+sub read_procedure_sql
+{
+    my $self = shift;
+    my($name) = @_;
+
+    # File slurp mode.
+    local $/;
+
+    open my $fh, "$self->{dir}/procedure/$name.sql";
+    my $sql = <$fh>;
+    close $fh;
+
+    return $sql;
+}
+
+=item $o->queue_push_procedure ( $name )
+
+=cut
+
+sub queue_push_procedure : method
+{
+    my $self = shift;
+    my( $name ) = @_;
+
+    my $new_sql = $self->read_procedure_sql( $name );
+
+    my($current_sql);
+    eval {
+        $current_sql = $self->pull_procedure_sql( $name );
+    };
+
+    if( $current_sql ) {
+        if( $new_sql ne $current_sql ) {
+            $self->queue_drop_procedure( $name, $new_sql );
+            $self->queue_create_procedure( $name, $new_sql );
+        }
+    } else {
+        $self->queue_create_procedure( $name, $new_sql );
+    }
+}
+
+=item $o->queue_drop_procedure ( $name )
+
+=cut
+
+sub queue_drop_procedure : method
+{
+    my $self = shift;
+    my($name) = @_;
+    my $todo = $self->{todo};
+    push @{ $todo->{drop_procedure} }, {
+        desc => "Drop procedure $name\n",
+        sql => "DROP PROCEDURE `$name`",
+    };
+}
+
+=item $o->queue_create_procedure ( $name, $sql )
+
+=cut
+
+sub queue_create_procedure : method
+{
+    my $self = shift;
+    my( $name, $sql ) = @_;
+    my $todo = $self->{todo};
+    push @{ $todo->{drop_procedure} }, {
+        desc => "Create procedure $name\n",
+        sql => $sql,
+    };
+}
+
+=item $o->queue_push_procedures ()
+
+=cut
+
+sub queue_push_procedures
+{
+    my $self = shift;
+
+    my @procedures = $self->procedure_names;
+    for my $procedure ( @procedures ) {
+        $self->queue_push_procedure( $procedure );
+    }
+}
+
 =item $o->push ()
 
 Handle the push command.
@@ -1253,6 +1376,7 @@ sub push :method
     
     $self->queue_push_table_definitions();
     $self->queue_push_trigger_definitions();
+    $self->queue_push_procedures();
 
     my $count = 0;
     for my $action ( TODO_ACTIONS ) {

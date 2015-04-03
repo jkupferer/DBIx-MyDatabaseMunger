@@ -52,7 +52,9 @@ sub clear_directories ()
     unlink glob "table/*";
     rmdir "table";
     unlink glob "trigger/*";
-    unlink "trigger";
+    rmdir "trigger";
+    unlink glob "procedure/*";
+    rmdir "procedure";
 }
 
 sub run_mysql ($)
