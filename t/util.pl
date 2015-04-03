@@ -21,6 +21,12 @@ $dsn .= ";port=$conf->{port}" if $conf->{port};
 use DBI ();
 my $dbh = DBI->connect($dsn,$conf->{user},$conf->{password},{RaiseError=>1});
 
+sub t_drop_table ($)
+{
+    my($table) = @_;
+    $dbh->do( "DROP TABLE `$table`" );
+}
+
 sub clear_database ()
 {
     my $sth;
@@ -43,7 +49,7 @@ sub clear_database ()
     $sth = $dbh->prepare("SHOW TABLES");
     $sth->execute();
     while( my( $table ) = $sth->fetchrow_array() ) {
-        $dbh->do("DROP TABLE `$table`");
+        t_drop_table( $table );
     }
 }
 
