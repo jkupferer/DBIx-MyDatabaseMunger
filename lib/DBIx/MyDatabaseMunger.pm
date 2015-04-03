@@ -23,7 +23,7 @@ be used directly.
     $dbmunger->pull();
     $dbmunger->make_archive();
     $dbmunger->push();
-        
+
 =head1 DESCRIPTION
 
 A collection of utilities to simplify complex database management tasks.
@@ -157,7 +157,7 @@ Return a list of all saved table names.
 
 =cut
 
-sub table_names :method
+sub table_names : method
 {
     my $self = shift;
     my @names;
@@ -180,7 +180,7 @@ This function is very particular about the input format.
 
 =cut
 
-sub parse_create_table_sql :method
+sub parse_create_table_sql : method
 {
     my $self = shift;
     my($sql) = @_;
@@ -278,7 +278,7 @@ Given a table name, retrieve the table definition SQL.
 
 =cut
 
-sub read_table_sql :method
+sub read_table_sql : method
 {
     my $self = shift;
     my($name) = @_;
@@ -299,7 +299,7 @@ Given a table name, retrieve the parsed table definition.
 
 =cut
 
-sub get_table_desc :method
+sub get_table_desc : method
 {
     my $self = shift;
     my($name) = @_;
@@ -351,7 +351,7 @@ table.
 
 =cut
 
-sub check_table_is_archive_capable :method
+sub check_table_is_archive_capable : method
 {
     my $self = shift;
     my ( $table ) = @_;
@@ -397,7 +397,7 @@ Check that the current table could be updated to the desired state.
 
 =cut
 
-sub check_table_updatable :method
+sub check_table_updatable : method
 {
     my $self = shift;
     my( $current, $desired ) = @_;
@@ -433,7 +433,7 @@ sub check_table_updatable :method
     die "Unable Table `$current->{name}`, engine mismatch $current->{engine} vs. $desired->{engine}\n"
         unless $current->{engine} eq $desired->{engine};
 }
-   
+
 
 =item $o->make_archive_table_desc ( $table_desc )
 
@@ -441,7 +441,7 @@ Make a archive table description for the given source table description.
 
 =cut
 
-sub make_archive_table_desc :method
+sub make_archive_table_desc : method
 {
     my $self = shift;
     my( $table ) = @_;
@@ -501,7 +501,7 @@ sub make_archive_table_desc :method
         next if $table->{column_definition}{$colname};
         push @columns, $colname;
     }
-    
+
     $archive_table{columns} = \@columns;
     $archive_table{column_definition} = \%column_definition;
 
@@ -519,7 +519,7 @@ sub make_archive_table_desc :method
 
     $archive_table{keys} = \@keys;
     $archive_table{key_definition} = \%key_definition;
-    
+
     return \%archive_table;
 }
 
@@ -529,7 +529,7 @@ Save create table SQL for a table.
 
 =cut
 
-sub write_table_sql :method
+sub write_table_sql : method
 {
     my $self = shift;
     my( $name, $sql ) = @_;
@@ -544,13 +544,26 @@ sub write_table_sql :method
     close $fh;
 }
 
+=item $o->remove_table_sql( $name )
+
+Remove create table SQL for a table.
+
+=cut
+
+sub remove_table_sql : method
+{
+    my $self = shift;
+    my( $name ) = @_;
+    unlink "$self->{dir}/table/$name.sql";
+}
+
 =item $o->write_table_definition( $table )
 
 Write create table SQL for given table description.
 
 =cut
 
-sub write_table_definition :method
+sub write_table_definition : method
 {
     my $self = shift;
     my( $table ) = @_;
@@ -582,7 +595,7 @@ Write trigger fragement SQL to a file.
 
 =cut
 
-sub write_trigger_fragment_sql :method
+sub write_trigger_fragment_sql : method
 {
     my $self = shift;
     my( $name, $time, $action, $table, $sql ) = @_;
@@ -603,7 +616,7 @@ Write trigger fragment sql for archive table management.
 
 =cut
 
-sub write_archive_trigger_fragments :method
+sub write_archive_trigger_fragments : method
 {
     my $self = shift;
     my( $table, $archive_table ) = @_;
@@ -703,7 +716,7 @@ Connect to the database.
 
 =cut
 
-sub dbi_connect :method
+sub dbi_connect : method
 {
     my $self = shift;
     use DBI ();
@@ -729,7 +742,7 @@ sub dbi_connect :method
 
 =cut
 
-sub query_table_sql :method
+sub query_table_sql : method
 {
     my $self = shift;
     my( $name ) = @_;
@@ -746,13 +759,13 @@ sub query_table_sql :method
 
 =cut
 
-sub pull_table_definition :method
+sub pull_table_definition : method
 {
     my $self = shift;
     my( $name ) = @_;
 
     print "Pulling table definition for `$name`\n" if $VERBOSE;
- 
+
     # Get MySQL create table sql
     my $sql = $self->query_table_sql( $name );
 
@@ -766,11 +779,11 @@ sub pull_table_definition :method
     $self->write_table_sql( $name, $sql );
 }
 
-=item $o->pull_table_definitions ()
+=item $o->query_table_names ()
 
 =cut
 
-sub pull_table_definitions :method
+sub query_table_names : method
 {
     my $self = shift;
     my $dbh = $self->{dbh};
@@ -778,12 +791,49 @@ sub pull_table_definitions :method
     my $sth = $dbh->prepare( 'SHOW TABLES' );
     $sth->execute();
 
+    my @tables = ();
+    while( my($name) = $sth->fetchrow_array ) {
+        push @tables, $name;
+    }
+
+    return @tables;
+}
+
+=item $o->pull_table_definitions ()
+
+=cut
+
+sub pull_table_definitions : method
+{
+    my $self = shift;
+    my $dbh = $self->{dbh};
+
     # Make table directory if required.
     mkdir "$self->{dir}/table"
         unless -d "$self->{dir}/table";
 
-    while( my($name) = $sth->fetchrow_array ) {
+    # Variable to keep track of tables in the database.
+    my %db_table = ();
+
+    for my $name ( $self->query_table_names ) {
+        # Skip tables not listed if an explicit list of tables is given.
+        if( @{ $self->{tables} } ) {
+            next unless grep { $name eq $_ } @{ $self->{tables} };
+        }
+        $db_table{ $name } = 1;
         pull_table_definition( $self, $name );
+    }
+
+    if( $self->{remove_tables} ) {
+        for my $name ( $self->table_names ) {
+            # Skip tables not listed if an explicit list of tables is given.
+            if( @{ $self->{tables} } ) {
+                next unless grep { $name eq $_ } @{ $self->{tables} };
+            }
+            # Skip table found in the database.
+            next if $db_table{$name};
+            $self->remove_table_sql( $name );
+        }
     }
 }
 
@@ -791,11 +841,11 @@ sub pull_table_definitions :method
 
 =cut
 
-sub pull_trigger_definitions :method
+sub pull_trigger_definitions : method
 {
     my $self = shift;
     my $dbh = $self->{dbh};
-    
+
     my $list_sth = $dbh->prepare( 'SHOW TRIGGERS' );
     $list_sth->execute();
 
@@ -816,11 +866,11 @@ sub pull_trigger_definitions :method
     return %triggers;
 }
 
-=item $o->pull_trigger_fragments :method
+=item $o->pull_trigger_fragments : method
 
 =cut
 
-sub pull_trigger_fragments :method
+sub pull_trigger_fragments : method
 {
     my($self) = @_;
 
@@ -905,7 +955,7 @@ sub write_procedure_sql : method
     my $self = shift;
     my($name,$sql) = @_;
     my $fh;
-    
+
     # Make table directory if required.
     mkdir "$self->{dir}/procedure"
         unless -d "$self->{dir}/procedure";
@@ -921,12 +971,12 @@ Handle the pull command.
 
 =cut
 
-sub pull :method
+sub pull : method
 {
     my $self = shift;
 
     $self->dbi_connect();
-    
+
     $self->pull_table_definitions();
     $self->pull_trigger_fragments();
     $self->pull_procedures();
@@ -936,7 +986,7 @@ sub pull :method
 
 =cut
 
-sub queue_create_table :method
+sub queue_create_table : method
 {
     my $self = shift;
     my( $table ) = @_;
@@ -959,7 +1009,7 @@ sub queue_create_table :method
 
 =cut
 
-sub create_table_sql :method    
+sub create_table_sql : method
 {
     my $self = shift;
     my( $table, $opt ) = @_;
@@ -1011,7 +1061,7 @@ sub constraint_sql : method
 
 =cut
 
-sub queue_add_table_constraint :method
+sub queue_add_table_constraint : method
 {
     my $self = shift;
     my($table,$constraint) = @_;
@@ -1030,7 +1080,7 @@ sub queue_add_table_constraint :method
 
 =cut
 
-sub queue_drop_table_constraint :method
+sub queue_drop_table_constraint : method
 {
     my $self = shift;
     my($table,$constraint) = @_;
@@ -1049,7 +1099,7 @@ sub queue_drop_table_constraint :method
 
 =cut
 
-sub queue_table_updates :method
+sub queue_table_updates : method
 {
     my $self = shift;
     my($current,$new) = @_;
@@ -1122,11 +1172,11 @@ sub queue_table_updates :method
 
 =cut
 
-sub queue_push_table_definition :method
+sub queue_push_table_definition : method
 {
     my $self = shift;
     my($name) = @_;
-    
+
     my $new_sql = $self->read_table_sql( $name );
     my $new = $self->parse_create_table_sql( $new_sql );
 
@@ -1148,25 +1198,55 @@ sub queue_push_table_definition :method
 
 =cut
 
-sub queue_push_table_definitions :method
+sub queue_push_table_definitions : method
 {
     my $self = shift;
 
-    my @tables = @{ $self->{tables} };
-    @tables = $self->table_names
-	unless @tables;
+    my @tables = $self->table_names;
 
-    for my $table ( @tables ) {
-        $self->queue_push_table_definition( $table );
+    for my $name ( @tables ) {
+        # Skip tables not listed if an explicit list of tables is given.
+        if( @{ $self->{tables} } ) {
+            next unless grep { $name eq $_ } @{ $self->{tables} };
+        }
+        $self->queue_push_table_definition( $name );
+    }
+
+    if( $self->{remove_tables} ) {
+        for my $name ( $self->query_table_names ) {
+            # Skip tables not listed if an explicit list of tables is given.
+            if( @{ $self->{tables} } ) {
+                next unless grep { $name eq $_ } @{ $self->{tables} };
+            }
+
+            # Skip tables that are defined locally
+            next if grep { $name eq $_ } @tables;
+
+            $self->queue_drop_table( $name );
+        }
     }
 }
 
+=item $o->queue_drop_table ( $name )
+
+=cut
+
+sub queue_drop_table : method
+{
+    my $self = shift;
+    my($name) = @_;
+    my $todo = $self->{todo};
+    push @{ $todo->{drop_table} }, {
+        desc => "Drop table $name\n",
+        sql => "DROP TABLE `$name`",
+    };
+}
 
 =item $o->assemble_triggers ()
 
 =cut
 
-sub assemble_triggers :method
+sub assemble_triggers : method
 {
     my $self = shift;
 
@@ -1201,7 +1281,7 @@ sub assemble_triggers :method
 
 =cut
 
-sub queue_push_trigger_definitions :method
+sub queue_push_trigger_definitions : method
 {
     my $self = shift;
     my $todo = $self->{todo};
@@ -1378,14 +1458,14 @@ Handle the push command.
 
 =cut
 
-sub push :method
+sub push : method
 {
     my $self = shift;
     my %todo = map {($_=>[])} TODO_ACTIONS;
     $self->{todo} = \%todo;
 
     $self->dbi_connect();
-    
+
     $self->queue_push_table_definitions();
     $self->queue_push_trigger_definitions();
     $self->queue_push_procedures();
@@ -1414,7 +1494,7 @@ Handle the make-archive command.
 
 =cut
 
-sub make_archive :method
+sub make_archive : method
 {
     my $self = shift;
 
@@ -1437,14 +1517,14 @@ sub make_archive :method
     # Basic checks done, we should be good to go to start making and updating
     # tables.
     for my $table ( @tables_desc ) {
-    
+
         # Make archive table description from source data table
         my $archive_table = $self->make_archive_table_desc( $table );
-    
+
         # Check if there is a current archive table.
         my $current_archive_table;
         eval { $current_archive_table = $self->get_table_desc( $archive_table->{name} ) };
-    
+
         if( $current_archive_table ) {
             # Check if any updates are required.
             print "Archive table `$current_archive_table->{name}` found for `$table->{name}`.\n"

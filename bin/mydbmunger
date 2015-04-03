@@ -56,6 +56,8 @@ OPTIONS FOR COMMAND pull OR push:
   -P, --port=#        Port number to use for connection or 0 for default to, in
                       order of preference, my.cnf, \$MYSQL_TCP_PORT,
                       /etc/services, built-in default (3306).
+      --remove-tables Remove unmatched tables from the local directories on
+                      pull or from the database on push.
   -s, --schema=DATABASE
                       MySQL/MariaDB database schema.
   -u, --user=NAME     User for login if not current user.
@@ -179,6 +181,7 @@ sub parse_commandline
     my $init_trigger_name;
     my $require_password;
     my $port;
+    my $remove_tables;
     my $schema;
     my $user;
 
@@ -206,6 +209,7 @@ sub parse_commandline
         "init-trigger-name=s" => \$init_trigger_name,
         "p|password" => \$require_password,
         "P|port=i" => \$port,
+        "remove-tables" => \$remove_tables,
         "s|schema=s" => \$schema,
         "u|user=s" => \$user,
         # make-archive options
@@ -260,6 +264,7 @@ sub parse_commandline
             revision => $revisioncol,
             stmt => $stmtcol,
         },
+        remove_tables => $remove_tables,
         updidvar => $updidvar,
         archive_name_pattern => $archive_name_pattern,
         init_trigger_name => $init_trigger_name,
