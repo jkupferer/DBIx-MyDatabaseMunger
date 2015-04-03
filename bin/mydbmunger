@@ -41,6 +41,7 @@ GENERAL OPTIONS:
   -v, --verbose       Show verbose messages.
 
 OPTIONS FOR COMMAND pull OR push:
+      --drop-columns  Drop unmatched columns in database on push.
   -d, --dryrun        Don't commit any changes, just print SQL that would be
                       executed.
   -h, --host=name     Connect to host.
@@ -122,7 +123,7 @@ sub read_config ($$)
     };
     die "Error reading configuration JSON: $@\n" if $@;
 
-    for my $o (qw(archive-name-pattern dir init-trigger-name schema updidvar verbose)) {
+    for my $o (qw(archive-name-pattern dir drop-columns init-trigger-name remove-procedures remove-tables remove-triggers schema updidvar verbose)) {
         my $f = $o;
         $f =~ tr/\-/_/;
         $opt->{$f} = $conf->{$o}
@@ -173,6 +174,7 @@ sub parse_commandline
 
     # pull/push options
     # $DRYRUN is global in DBIx::myDatabaseMunger
+    my $drop_columns;
     my $host;
     my $init_trigger_name;
     my $require_password;
@@ -198,6 +200,7 @@ sub parse_commandline
         "t|table=s" => \@tables,
         "v|verbose" => \$DBIx::MyDatabaseMunger::VERBOSE,
         # pull/push options
+        "drop-columns" => \$drop_columns,
         "d|dryrun" => \$DBIx::MyDatabaseMunger::DRYRUN,
         "h|host=s" => \$host,
         "init-trigger-name=s" => \$init_trigger_name,
@@ -239,6 +242,7 @@ sub parse_commandline
     my $opt = {
         command => $command,
         dir => $dir,
+        drop_columns => $drop_columns,
         tables => \@tables,
         connect => {
             schema => $schema,

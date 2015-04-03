@@ -1072,6 +1072,18 @@ sub queue_table_updates :method
         }
     }
 
+    # Look for unmatched columns to drop if drop_tables is set.
+    if( $self->{drop_columns} ) {
+        for my $col ( @{ $current->{columns} } ) {
+            next if $new->{column_definition}{$col};
+
+            push @{$todo->{drop_column}}, {
+                desc => "Drop column $col from $current->{name}.",
+                sql => "ALTER TABLE `$current->{name}` DROP COLUMN `$col`",
+            };
+        }
+    }
+
     for my $key ( @{ $new->{keys} } ) {
         if( $current->{key_definition}{$key} ) {
             unless( $current->{key_definition}{$key} eq $new->{key_definition}{$key} ) {
