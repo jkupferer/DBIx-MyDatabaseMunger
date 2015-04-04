@@ -155,8 +155,37 @@ sub new
 # PRIVATE UTILITY FUNCTIONS
 #
 
+### $self->__dbi_connect ()
+#
+# Connect to database.
+#
+sub __dbi_connect : method
+{
+    my $self = shift;
+    use DBI ();
+
+    die "No database schema specified.\n"
+        unless $self->{connect}{schema};
+
+    # Build Perl DBI dsn
+    my $dsn = "DBI:mysql:database=$self->{connect}{schema}";
+    $dsn .= ";host=$self->{connect}{host}" if $self->{connect}{host};
+    $dsn .= ";port=$self->{connect}{port}" if $self->{connect}{port};
+
+    my $dbh = DBI->connect(
+        $dsn,
+        $self->{connect}{user},
+        $self->{connect}{password},
+        { PrintError => 0, RaiseError => 1 }
+    );
+    $self->{dbh} = $dbh;
+}
+
+### $self->__ignore_table ( $name )
+#
 # Function to determine whether a table should be ignored based on the tables
 # setting.
+#
 sub __ignore_table : method
 {
     my $self = shift;
@@ -730,34 +759,6 @@ sub write_archive_trigger_fragments : method
 
 }
 
-=item $o->dbi_connect ()
-
-Connect to the database.
-
-=cut
-
-sub dbi_connect : method
-{
-    my $self = shift;
-    use DBI ();
-
-    die "No database schema specified.\n"
-        unless $self->{connect}{schema};
-
-    # Build Perl DBI dsn
-    my $dsn = "DBI:mysql:database=$self->{connect}{schema}";
-    $dsn .= ";host=$self->{connect}{host}" if $self->{connect}{host};
-    $dsn .= ";port=$self->{connect}{port}" if $self->{connect}{port};
-
-    my $dbh = DBI->connect(
-        $dsn,
-        $self->{connect}{user},
-        $self->{connect}{password},
-        { PrintError => 0, RaiseError => 1 }
-    );
-    $self->{dbh} = $dbh;
-}
-
 =item $o->query_table_sql ( $name )
 
 =cut
@@ -990,7 +991,7 @@ sub pull : method
 {
     my $self = shift;
 
-    $self->dbi_connect();
+    $self->__dbi_connect();
 
     $self->pull_table_definitions();
     $self->pull_trigger_fragments();
@@ -1470,7 +1471,7 @@ sub push : method
     my %todo = map {($_=>[])} TODO_ACTIONS;
     $self->{todo} = \%todo;
 
-    $self->dbi_connect();
+    $self->__dbi_connect();
 
     $self->queue_push_table_definitions();
     $self->queue_push_trigger_definitions();
