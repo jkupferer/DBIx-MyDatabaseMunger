@@ -910,7 +910,7 @@ sub pull_trigger_definitions : method
         $action = lc $action;
         $time = lc $time;
 
-	$triggers{$table}{$action}{$time} = { sql => $sql, name => $trigger_name };
+        $triggers{$table}{$action}{$time} = { sql => $sql, name => $trigger_name };
     }
 
     return %triggers;
@@ -944,7 +944,7 @@ sub pull_trigger_fragments : method
                     $found_fragments{$table}{$action}{$time}{$name} = 1;
                 }
 
-		# Handle any untagged trigger SQL?
+                # Handle any untagged trigger SQL?
                 $trigger_sql =~ s/\s*$//;
                 if( $trigger_sql ) {
                     if( $self->{init_trigger_name} ) {
@@ -1342,8 +1342,8 @@ sub assemble_triggers : method
         my $sql = $self->read_trigger_fragment_sql( $fragment );
         my($table,$action,$time,$name) = @{$fragment}{'table','action','time','name'};
 
-	$triggers{$table}{$action}{$time} ||= '';
-	$triggers{$table}{$action}{$time} .= "/** begin $name */\n$sql/** end $name */\n";
+        $triggers{$table}{$action}{$time} ||= '';
+        $triggers{$table}{$action}{$time} .= "/** begin $name */\n$sql/** end $name */\n";
     }
 
     return %triggers;
@@ -1573,7 +1573,7 @@ sub run_queue : method
             my $task = shift @{ $self->{todo}{$action} };
             ++$count;
             print $task->{desc},"\n";
-	    print "\n$task->{sql}\n\n" if $VERBOSE or $DRYRUN;
+            print "\n$task->{sql}\n\n" if $VERBOSE or $DRYRUN;
             eval {
                 $self->{dbh}->do( $task->{sql} ) unless $DRYRUN;
             };
