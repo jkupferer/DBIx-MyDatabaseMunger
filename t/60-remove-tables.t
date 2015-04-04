@@ -24,7 +24,7 @@ ok( $ret == 0, "run pull" );
 unlink "table/Service.pm";
 
 $ret = system( @cmdroot, "push" );
-ok( $ret == 0, "push without --remove-tables" );
+ok( $ret == 0, "push without --remove=any" );
 
 clear_directories();
 
@@ -35,8 +35,8 @@ $ret = system(qw(md5sum -c t/60-remove-tables.noremove.md5));
 
 unlink "table/Service.sql";
 
-$ret = system( @cmdroot, "--remove-tables", "push" );
-ok( $ret == 0, "push with --remove-tables" );
+$ret = system( @cmdroot, "--remove=any", "push" );
+ok( $ret == 0, "push with --remove=any" );
 
 clear_directories();
 

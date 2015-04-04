@@ -920,7 +920,7 @@ sub pull_table_definitions : method
         pull_table_definition( $self, $name );
     }
 
-    if( $self->{remove_tables} ) {
+    if( $self->{remove}{table} ) {
         for my $name ( $self->table_names ) {
             next if $self->__ignore_table( $name );
 
@@ -1006,7 +1006,7 @@ sub pull_trigger_fragments : method
     }
 
     # Remove trigger fragmentn not found during pull.
-    if( $self->{remove_triggers} ) {
+    if( $self->{remove}{trigger} ) {
         for my $fragment ( $self->trigger_fragments ) {
             my($table,$action,$time,$name) = @{$fragment}{'table','action','time','name'};
             next if $found_fragments{$table}{$action}{$time}{$name};
@@ -1054,7 +1054,7 @@ sub pull_procedures : method
         $self->write_procedure_sql( $name, $sql );
     }
 
-    if( $self->{remove_procedures} ) {
+    if( $self->{remove}{procedure} ) {
         for my $procedure ( $self->procedure_names ) {
             next if $found_procedure{ $procedure };
             $self->remove_procedure_sql( $procedure );
@@ -1320,7 +1320,7 @@ sub queue_push_table_definitions : method
         $self->queue_push_table_definition( $name );
     }
 
-    if( $self->{remove_tables} ) {
+    if( $self->{remove}{table} ) {
         for my $name ( $self->query_table_names ) {
 
             next if $self->__ignore_table( $name );
@@ -1463,7 +1463,7 @@ sub queue_push_trigger_definitions : method
     }
 
     # Check if any triggers should be dropped.
-    if( $self->{remove_triggers} ) {
+    if( $self->{remove}{trigger} ) {
         for my $table ( sort keys %current_triggers ) {
 
             next if $self->__ignore_table( $table );
@@ -1590,7 +1590,7 @@ sub queue_push_procedures
         $self->queue_push_procedure( $procedure );
     }
 
-    if( $self->{remove_procedures} ) {
+    if( $self->{remove}{procedure} ) {
         for my $name ( $self->query_procedure_names ) {
             next if grep { $_ eq $name } @procedures;
             $self->queue_drop_procedure( $name );

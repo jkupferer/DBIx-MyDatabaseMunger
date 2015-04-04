@@ -39,13 +39,13 @@ ok( $ret == 0, "run pull" );
 t_add_procedure_sql();
 
 $ret = system( @cmdroot, "pull" );
-ok( $ret == 0, "Run pull without --remove-procedures" );
+ok( $ret == 0, "Run pull without --remove=any" );
 
 $ret = system(qw(md5sum -c t/80-procedures.md5));
 ok( $ret == 0, "Check procedures md5" );
 
-$ret = system( @cmdroot, "--remove-procedures", "pull" );
-ok( $ret == 0, "pull with --remove-procedures" );
+$ret = system( @cmdroot, "--remove=any", "pull" );
+ok( $ret == 0, "pull with --remove=any" );
 
 $ret = system(qw(md5sum -c t/80-procedures.remove.md5));
 ok( $ret == 0, "Check procedures md5" );
@@ -77,8 +77,8 @@ ok( $ret == 0, "Check procedures md5" );
 # Remove local sql then test push with remove
 unlink "procedure/create_user.sql";
 
-$ret = system( @cmdroot, "--remove-procedures", "push" );
-ok( $ret == 0, "push --remove-procedures" );
+$ret = system( @cmdroot, "--remove=any", "push" );
+ok( $ret == 0, "push --remove=any" );
 
 clear_directories();
 

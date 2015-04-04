@@ -56,14 +56,9 @@ OPTIONS FOR COMMAND pull OR push:
   -P, --port=#        Port number to use for connection or 0 for default to, in
                       order of preference, my.cnf, \$MYSQL_TCP_PORT,
                       /etc/services, built-in default (3306).
-      --remove-procedures
-                      Remove unmatched procedures from the local directories on
-                      pull or from the database on push.
-      --remove-tables Remove unmatched tables from the local directories on
-                      pull or from the database on push.
-      --remove-triggers
-                      Remove unmatched triggers from the local directories on
-                      pull or from the database on push.
+      --remove=[any|procedure|table|trigger]
+                      Remove unmatched procedures, tables, or triggres from the
+                      local directories on pull or from the database on push.
   -s, --schema=DATABASE
                       MySQL/MariaDB database schema.
   -u, --user=NAME     User for login if not current user.
@@ -131,7 +126,7 @@ sub read_config ($$)
     };
     die "Error reading configuration JSON: $@\n" if $@;
 
-    for my $o (qw(archive-name-pattern dir drop-columns init-trigger-name remove-procedures remove-tables remove-triggers schema updidvar verbose)) {
+    for my $o (qw(archive-name-pattern dir drop-columns init-trigger-name schema updidvar verbose)) {
         my $f = $o;
         $f =~ tr/\-/_/;
         $opt->{$f} = $conf->{$o}
@@ -147,6 +142,8 @@ sub read_config ($$)
         $opt->{colname}{$col} = $conf->{$f}
             if defined $conf->{$f} and not defined $opt->{colname}{$col};
     }
+    $opt->{remove} = $conf->{remove}
+        if $conf->{remove} and not defined $opt->{remove};
     if( $conf->{tables} and not @{ $opt->{tables} } ) {
         $opt->{tables} = $conf->{tables};
     }
@@ -187,9 +184,7 @@ sub parse_commandline
     my $init_trigger_name;
     my $require_password;
     my $port;
-    my $remove_procedures;
-    my $remove_tables;
-    my $remove_triggers;
+    my $remove;
     my $schema;
     my $user;
 
@@ -217,9 +212,7 @@ sub parse_commandline
         "init-trigger-name=s" => \$init_trigger_name,
         "p|password" => \$require_password,
         "P|port=i" => \$port,
-        "remove-procedures" => \$remove_procedures,
-        "remove-tables" => \$remove_tables,
-        "remove-triggers" => \$remove_triggers,
+        "remove=s" => \$remove,
         "s|schema=s" => \$schema,
         "u|user=s" => \$user,
         # make-archive options
@@ -274,9 +267,7 @@ sub parse_commandline
             revision => $revisioncol,
             stmt => $stmtcol,
         },
-        remove_procedures => $remove_procedures,
-        remove_tables => $remove_tables,
-        remove_triggers => $remove_triggers,
+        remove => $remove,
         updidvar => $updidvar,
         archive_name_pattern => $archive_name_pattern,
         init_trigger_name => $init_trigger_name,
@@ -284,6 +275,16 @@ sub parse_commandline
 
     if( $config ) {
         read_config( $opt, $config );
+    }
+
+    # Set flag for remove to everything if remove option was specified without
+    # value.
+    if( $opt->{remove} ) {
+        if( $opt->{remove} eq 'any' ) {
+            $opt->{remove} = { table => 1, trigger => 1, procedure => 1 };
+        } else {
+            $opt->{remove} = { map { ($_=>1) } split ',', $opt->{remove} };
+        }
     }
 
     # Read password from the command line in case it wasn't provided as an

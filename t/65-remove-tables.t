@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 #
-# This tests --remove-tales with pull action.
+# This tests --remove=any with pull action.
 #
 use strict;
 use warnings;
@@ -27,13 +27,13 @@ ok( $ret == 0, "run pull" );
 t_drop_table( 'Service' );
 
 $ret = system( @cmdroot, "pull" );
-ok( $ret == 0, "pull without --remove-tables" );
+ok( $ret == 0, "pull without --remove=any" );
 
 $ret = system(qw(md5sum -c t/65-remove-tables.noremove.md5));
 ok( $ret == 0, "check md5, should have Service table" );
 
-$ret = system( @cmdroot, "--remove-tables", "pull" );
-ok( $ret == 0, "pull with --remove-tables" );
+$ret = system( @cmdroot, "--remove=any", "pull" );
+ok( $ret == 0, "pull with --remove=any" );
 
 $ret = system(qw(md5sum -c t/65-remove-tables.md5));
 ok( $ret == 0, "check md5, should not have Service table" );
