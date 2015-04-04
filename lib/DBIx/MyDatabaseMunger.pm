@@ -897,8 +897,6 @@ sub pull_trigger_definitions : method
         $action = lc $action;
         $time = lc $time;
 
-	$triggers{$table} ||= {};
-	$triggers{$table}{$action} ||= {};
 	$triggers{$table}{$action}{$time} = { sql => $sql, name => $trigger_name };
     }
 
@@ -1315,8 +1313,6 @@ sub assemble_triggers : method
         my $sql = $self->read_trigger_fragment_sql( $fragment );
         my($table,$action,$time,$name) = @{$fragment}{'table','action','time','name'};
 
-	$triggers{$table} ||= {};
-	$triggers{$table}{$action} ||= {};
 	$triggers{$table}{$action}{$time} ||= '';
 	$triggers{$table}{$action}{$time} .= "/** begin $name */\n$sql/** end $name */\n";
     }
