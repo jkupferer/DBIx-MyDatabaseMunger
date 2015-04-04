@@ -651,6 +651,17 @@ sub remove_trigger_fragment : method
     unlink "$self->{dir}/trigger/$fragment->{file}";
 }
 
+=item $o->remove_procedure_sql( $name )
+
+=cut
+
+sub remove_procedure_sql : method
+{
+    my $self = shift;
+    my( $name ) = @_;
+    unlink "$self->{dir}/procedure/$name.sql";
+}
+
 =item $o->write_table_definition( $table )
 
 Write create table SQL for given table description.
@@ -865,6 +876,26 @@ sub query_table_names : method
     return @tables;
 }
 
+=item $o->query_procedure_names ()
+
+=cut
+
+sub query_procedure_names : method
+{
+    my $self = shift;
+    my $dbh = $self->{dbh};
+
+    my $sth = $dbh->prepare( 'SHOW PROCEDURE STATUS' );
+    $sth->execute();
+
+    my @names = ();
+    while( my $procedure = $sth->fetchrow_hashref() ) {
+        push @names, $procedure->{Name};
+    }
+
+    return @names;
+}
+
 =item $o->pull_table_definitions ()
 
 =cut
@@ -1010,18 +1041,25 @@ sub pull_procedure_sql : method
 sub pull_procedures : method
 {
     my $self = shift;
-    my $dbh = $self->{dbh};
 
-    my $list_sth = $dbh->prepare( 'SHOW PROCEDURE STATUS' );
-    $list_sth->execute();
+    # Keep track of procedure names found on the database to support
+    # remove feature.
+    my %found_procedure;
 
-    while( my $procedure = $list_sth->fetchrow_hashref() ) {
-        my $name = $procedure->{Name};
+    for my $name ( $self->query_procedure_names ) {
+        $found_procedure{$name} = 1;
+
         my $sql = $self->pull_procedure_sql( $name );
 
         $self->write_procedure_sql( $name, $sql );
     }
 
+    if( $self->{remove_procedures} ) {
+        for my $procedure ( $self->procedure_names ) {
+            next if $found_procedure{ $procedure };
+            $self->remove_procedure_sql( $procedure );
+        }
+    }
 }
 
 =item $o->write_procedure_sql( $name, $sql )
@@ -1550,6 +1588,13 @@ sub queue_push_procedures
     my @procedures = $self->procedure_names;
     for my $procedure ( @procedures ) {
         $self->queue_push_procedure( $procedure );
+    }
+
+    if( $self->{remove_procedures} ) {
+        for my $name ( $self->query_procedure_names ) {
+            next if grep { $_ eq $name } @procedures;
+            $self->queue_drop_procedure( $name );
+        }
     }
 }
 

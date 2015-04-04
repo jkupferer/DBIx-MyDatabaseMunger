@@ -56,6 +56,9 @@ OPTIONS FOR COMMAND pull OR push:
   -P, --port=#        Port number to use for connection or 0 for default to, in
                       order of preference, my.cnf, \$MYSQL_TCP_PORT,
                       /etc/services, built-in default (3306).
+      --remove-procedures
+                      Remove unmatched procedures from the local directories on
+                      pull or from the database on push.
       --remove-tables Remove unmatched tables from the local directories on
                       pull or from the database on push.
       --remove-triggers
@@ -184,6 +187,7 @@ sub parse_commandline
     my $init_trigger_name;
     my $require_password;
     my $port;
+    my $remove_procedures;
     my $remove_tables;
     my $remove_triggers;
     my $schema;
@@ -213,6 +217,7 @@ sub parse_commandline
         "init-trigger-name=s" => \$init_trigger_name,
         "p|password" => \$require_password,
         "P|port=i" => \$port,
+        "remove-procedures" => \$remove_procedures,
         "remove-tables" => \$remove_tables,
         "remove-triggers" => \$remove_triggers,
         "s|schema=s" => \$schema,
@@ -269,6 +274,7 @@ sub parse_commandline
             revision => $revisioncol,
             stmt => $stmtcol,
         },
+        remove_procedures => $remove_procedures,
         remove_tables => $remove_tables,
         remove_triggers => $remove_triggers,
         updidvar => $updidvar,
