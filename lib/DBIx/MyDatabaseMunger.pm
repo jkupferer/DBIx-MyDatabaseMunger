@@ -257,7 +257,7 @@ sub parse_create_table_sql : method
     shift( @create_sql ) =~ m/CREATE TABLE `(.*)`/ or die "Create table SQL does not begin with CREATE TABLE!\n";
     my $name = $1;
 
-    # The last line should have the talbe options
+    # The last line should have the table options
     # ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 COMMENT='Application User.'
     # We don't need to understand every last option, but let's extract at least the
     # ENGINE and COMMENT.
