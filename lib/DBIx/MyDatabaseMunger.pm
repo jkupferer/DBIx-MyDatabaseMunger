@@ -1394,35 +1394,37 @@ sub queue_push_trigger_definitions : method
                     $self->__queue_sql( 'create_trigger',
                         "Create $time $action on $table trigger.",
                         $create_sql,
-		    );
+                    );
                 } elsif( $current->{sql} ne $new ) {
                     $self->__queue_sql( 'drop_trigger',
                         "Drop $time $action on $table trigger.",
                         "DROP TRIGGER IF EXISTS `$current->{name}`",
-		    );
+                    );
                     $self->__queue_sql( 'create_trigger',
                         "Create $time $action on $table trigger.",
                         $create_sql,
-		    );
+                    );
                 }
             }
         }
     }
 
     # Check if any triggers should be dropped.
-    for my $table ( sort keys %current_triggers ) {
+    if( $self->{remove_triggers} ) {
+        for my $table ( sort keys %current_triggers ) {
 
-        next if $self->__ignore_table( $table );
+            next if $self->__ignore_table( $table );
 
-        for my $action ( sort keys %{$current_triggers{$table}} ) {
-            for my $time ( sort keys %{$current_triggers{$table}{$action}} ) {
-                next if $triggers{$table}{$action}{$time};
-                my $trigger = $current_triggers{$table}{$action}{$time};
+            for my $action ( sort keys %{$current_triggers{$table}} ) {
+                for my $time ( sort keys %{$current_triggers{$table}{$action}} ) {
+                    next if $triggers{$table}{$action}{$time};
+                    my $trigger = $current_triggers{$table}{$action}{$time};
 
-                $self->__queue_sql( 'drop_trigger',
-                    "Drop $time $action on $table trigger.",
-                    "DROP TRIGGER IF EXISTS `$trigger->{name}`",
-		);
+                    $self->__queue_sql( 'drop_trigger',
+                        "Drop $time $action on $table trigger.",
+                        "DROP TRIGGER IF EXISTS `$trigger->{name}`",
+                    );
+                }
             }
         }
     }
