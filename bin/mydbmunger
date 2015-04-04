@@ -58,6 +58,9 @@ OPTIONS FOR COMMAND pull OR push:
                       /etc/services, built-in default (3306).
       --remove-tables Remove unmatched tables from the local directories on
                       pull or from the database on push.
+      --remove-triggers
+                      Remove unmatched triggers from the local directories on
+                      pull or from the database on push.
   -s, --schema=DATABASE
                       MySQL/MariaDB database schema.
   -u, --user=NAME     User for login if not current user.
@@ -182,6 +185,7 @@ sub parse_commandline
     my $require_password;
     my $port;
     my $remove_tables;
+    my $remove_triggers;
     my $schema;
     my $user;
 
@@ -210,6 +214,7 @@ sub parse_commandline
         "p|password" => \$require_password,
         "P|port=i" => \$port,
         "remove-tables" => \$remove_tables,
+        "remove-triggers" => \$remove_triggers,
         "s|schema=s" => \$schema,
         "u|user=s" => \$user,
         # make-archive options
@@ -265,6 +270,7 @@ sub parse_commandline
             stmt => $stmtcol,
         },
         remove_tables => $remove_tables,
+        remove_triggers => $remove_triggers,
         updidvar => $updidvar,
         archive_name_pattern => $archive_name_pattern,
         init_trigger_name => $init_trigger_name,

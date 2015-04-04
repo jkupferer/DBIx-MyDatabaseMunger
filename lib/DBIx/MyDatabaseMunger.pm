@@ -623,6 +623,19 @@ sub remove_table_sql : method
     unlink "$self->{dir}/table/$name.sql";
 }
 
+=item $o->remove_trigger_fragment( $fragment )
+
+Remove trigger fragment SQL.
+
+=cut
+
+sub remove_trigger_fragment : method
+{
+    my $self = shift;
+    my( $fragment ) = @_;
+    unlink "$self->{dir}/trigger/$fragment->{file}";
+}
+
 =item $o->write_table_definition( $table )
 
 Write create table SQL for given table description.
@@ -913,6 +926,9 @@ sub pull_trigger_fragments : method
 
     my %triggers = pull_trigger_definitions( $self );
 
+    # Variable to track fragments.
+    my %found_fragments = ();
+
     for my $table ( sort keys %triggers ) {
 
         next if $self->__ignore_table( $table );
@@ -925,18 +941,31 @@ sub pull_trigger_fragments : method
                 while( $trigger_sql =~ s{/\*\* begin (\S+) \*/\s*(.*)/\*\* end \1 \*/\s*}{}s ) {
                     my( $name, $sql ) = ($1,$2);
                     $self->write_trigger_fragment_sql( $name, $time, $action, $table, $sql );
+                    $found_fragments{$table}{$action}{$time}{$name} = 1;
                 }
 
 		# Handle any untagged trigger SQL?
                 $trigger_sql =~ s/\s*$//;
                 if( $trigger_sql ) {
                     if( $self->{init_trigger_name} ) {
-                        $self->write_trigger_fragment_sql( $self->{init_trigger_name}, $time, $action, $table, $trigger_sql );
+                        my $name = $self->{init_trigger_name};
+                        $self->write_trigger_fragment_sql( $name, $time, $action, $table, $trigger_sql );
+                        $found_fragments{$table}{$action}{$time}{$name} = 1;
                     } else {
                         die "Found unlabeled trigger code for $time $action `$table`!\n$trigger_sql\nDo you need to specify --init-trigger-name=NAME?\n";
                     }
                 }
             }
+        }
+    }
+
+    # Remove trigger fragmentn not found during pull.
+    if( $self->{remove_triggers} ) {
+        for my $fragment ( $self->trigger_fragments ) {
+            my($table,$action,$time,$name) = @{$fragment}{'table','action','time','name'};
+            next if $found_fragments{$table}{$action}{$time}{$name};
+
+            $self->remove_trigger_fragment( $fragment );
         }
     }
 }
