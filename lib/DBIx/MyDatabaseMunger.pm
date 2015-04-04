@@ -887,6 +887,9 @@ sub pull_trigger_definitions : method
 
     my %triggers;
     while( my($trigger_name,$action,$table,$sql,$time) = $list_sth->fetchrow_array() ) {
+
+        next if $self->__ignore_table( $table );
+
         # Strip off BEGIN and END from trigger body
         $sql =~ s/^\s*BEGIN\s*(.*)END\s*$/$1/s;
 
