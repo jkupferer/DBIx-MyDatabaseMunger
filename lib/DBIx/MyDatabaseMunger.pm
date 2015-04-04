@@ -144,6 +144,9 @@ sub new
     $self->{colname}{stmt}        ||= 'stmt';
     $self->{colname}{updid}       ||= 'updid';
 
+    # Initialize todo queues.
+    $self->{todo} = { map {($_=>[])} TODO_ACTIONS };
+
     return bless $self, $class;
 }
 
@@ -157,7 +160,7 @@ sub new
 
 ### $self->__dbi_connect ()
 #
-# Connect to database.
+# Connect to database, set $self->{dbh}.
 #
 sub __dbi_connect : method
 {
@@ -183,8 +186,7 @@ sub __dbi_connect : method
 
 ### $self->__ignore_table ( $name )
 #
-# Function to determine whether a table should be ignored based on the tables
-# setting.
+# Determine whether a table should be ignored based on the tables setting.
 #
 sub __ignore_table : method
 {
@@ -196,6 +198,21 @@ sub __ignore_table : method
 
     # Skip table if not listed expliitly in tables.
     return ( grep { $name eq $_ } @{ $self->{tables} } ) ? 0 : 1;
+}
+
+### $self->__queue_sql ( $action, $desc, $sql )
+#
+# Queue SQL action for later execution.
+#
+sub __queue_sql : method
+{
+    my $self = shift;
+    my( $action, $desc, $sql ) = @_;
+
+    push @{$self->{todo}{$action}}, {
+        desc => $desc,
+        sql => $sql,
+    };
 }
 
 =over 4
@@ -1006,15 +1023,11 @@ sub queue_create_table : method
 {
     my $self = shift;
     my( $table ) = @_;
-    my $todo = $self->{todo};
-    my $dbh = $self->{dbh};
 
-    my $sql = $self->create_table_sql( $table, { no_constraints => 1 } );
-
-    push @{$todo->{create_table}}, {
-        desc => "Create table $table->{name}.",
-        sql => $sql,
-    };
+    $self->__queue_sql( 'create_table',
+        "Create table $table->{name}.",
+        $self->create_table_sql( $table, { no_constraints => 1 } ),
+    );
 
     for my $constraint ( @{$table->{constraints}} ) {
         $self->queue_add_table_constraint($table,$constraint);
@@ -1081,13 +1094,13 @@ sub queue_add_table_constraint : method
 {
     my $self = shift;
     my($table,$constraint) = @_;
-    my $todo = $self->{todo};
 
     my $def = $table->{constraint_definition}{$constraint};
-    push @{$todo->{add_constraint}}, {
-        desc => "Add constraint $constraint on $table->{name}.",
-        sql => "ALTER TABLE `$table->{name}` ADD ".$self->constraint_sql( $def ),
-    };
+
+    $self->__queue_sql( 'add_constraint',
+        "Add constraint $constraint on $table->{name}.",
+        "ALTER TABLE `$table->{name}` ADD ".$self->constraint_sql( $def ),
+    );
 
     return $self;
 }
@@ -1100,13 +1113,11 @@ sub queue_drop_table_constraint : method
 {
     my $self = shift;
     my($table,$constraint) = @_;
-    my $todo = $self->{todo};
 
-    my $def = $table->{constraint_definition}{$constraint};
-    push @{$todo->{drop_constraint}}, {
-        desc => "Drop constraint $constraint on $table->{name}.",
-        sql => "ALTER TABLE `$table->{name}` DROP FOREIGN KEY `$constraint`",
-    };
+    $self->__queue_sql( 'drop_constraint',
+        "Drop constraint $constraint on $table->{name}.",
+        "ALTER TABLE `$table->{name}` DROP FOREIGN KEY `$constraint`",
+    );
 
     return $self;
 }
@@ -1119,22 +1130,21 @@ sub queue_table_updates : method
 {
     my $self = shift;
     my($current,$new) = @_;
-    my $todo = $self->{todo};
 
     for( my $i=0; $i < @{ $new->{columns} }; ++$i ) {
         my $col = $new->{columns}[$i];
         if( $current->{column_definition}{$col} ) {
             unless( $current->{column_definition}{$col} eq $new->{column_definition}{$col} ) {
-                push @{$todo->{modify_column}}, {
-                    desc => "Modify column $col in $current->{name}\n",
-                    sql => "ALTER TABLE `$current->{name}` MODIFY COLUMN `$col` $new->{column_definition}{$col}",
-                };
+                $self->__queue_sql( 'modify_column',
+                    "Modify column $col in $current->{name}\n",
+                    "ALTER TABLE `$current->{name}` MODIFY COLUMN `$col` $new->{column_definition}{$col}",
+                );
             }
         } else {
-            push @{$todo->{add_column}}, {
-                desc => "Add column $col to $current->{name}.",
-                sql => "ALTER TABLE `$current->{name}` ADD COLUMN `$col` $new->{column_definition}{$col} ".($i == 0 ? "BEFORE `$new->{columns}[1]`" : "AFTER `".$new->{columns}[$i-1]."`"),
-            };
+            $self->__queue_sql( 'add_column',
+                "Add column $col to $current->{name}.",
+                "ALTER TABLE `$current->{name}` ADD COLUMN `$col` $new->{column_definition}{$col} ".($i == 0 ? "BEFORE `$new->{columns}[1]`" : "AFTER `".$new->{columns}[$i-1]."`"),
+            );
         }
     }
 
@@ -1143,30 +1153,30 @@ sub queue_table_updates : method
         for my $col ( @{ $current->{columns} } ) {
             next if $new->{column_definition}{$col};
 
-            push @{$todo->{drop_column}}, {
-                desc => "Drop column $col from $current->{name}.",
-                sql => "ALTER TABLE `$current->{name}` DROP COLUMN `$col`",
-            };
+            $self->__queue_sql( 'drop_column',
+                "Drop column $col from $current->{name}.",
+                "ALTER TABLE `$current->{name}` DROP COLUMN `$col`",
+            );
         }
     }
 
     for my $key ( @{ $new->{keys} } ) {
         if( $current->{key_definition}{$key} ) {
             unless( $current->{key_definition}{$key} eq $new->{key_definition}{$key} ) {
-                push @{$todo->{drop_key}}, {
-                    desc => "Drop key $key on $current->{name}.",
-                    sql => "ALTER TABLE `$current->{name}` DROP KEY `$key`",
-                };
-                push @{$todo->{add_key}}, {
-                    desc => "Add key $key on $current->{name}.",
-                    sql => "ALTER TABLE `$current->{name}` ADD $new->{key_definition}{$key}",
-                };
+                $self->__queue_sql( 'drop_key',
+                    "Drop key $key on $current->{name}.",
+                    "ALTER TABLE `$current->{name}` DROP KEY `$key`",
+                );
+                $self->__queue_sql( 'add_key',
+                    "Add key $key on $current->{name}.",
+                    "ALTER TABLE `$current->{name}` ADD $new->{key_definition}{$key}",
+                );
             }
         } else {
-            push @{$todo->{add_key}}, {
-                desc => "Create key $key on $current->{name}.",
-                sql => "ALTER TABLE `$current->{name}` ADD $new->{key_definition}{$key}",
-            };
+            $self->__queue_sql( 'add_key',
+                "Create key $key on $current->{name}.",
+                "ALTER TABLE `$current->{name}` ADD $new->{key_definition}{$key}",
+            );
         }
     }
 
@@ -1248,11 +1258,10 @@ sub queue_drop_table : method
 {
     my $self = shift;
     my($name) = @_;
-    my $todo = $self->{todo};
-    push @{ $todo->{drop_table} }, {
-        desc => "Drop table $name\n",
-        sql => "DROP TABLE `$name`",
-    };
+    $self->__queue_sql( 'drop_table',
+        "Drop table $name\n",
+        "DROP TABLE `$name`",
+    );
 }
 
 =item $o->assemble_triggers ()
@@ -1297,7 +1306,6 @@ sub assemble_triggers : method
 sub queue_push_trigger_definitions : method
 {
     my $self = shift;
-    my $todo = $self->{todo};
 
     my %triggers = $self->assemble_triggers();
     my %current_triggers = $self->pull_trigger_definitions();
@@ -1314,19 +1322,19 @@ sub queue_push_trigger_definitions : method
                 my $create_sql = "CREATE TRIGGER `${time}_${action}_${table}` $time $action ON `$table` FOR EACH ROW BEGIN\n${new}END";
 
                 if( not $current ) {
-                    push @{$todo->{create_trigger}}, {
-                        desc => "Create $time $action on $table trigger.",
-                        sql => $create_sql,
-		    };
+                    $self->__queue_sql( 'create_trigger',
+                        "Create $time $action on $table trigger.",
+                        $create_sql,
+		    );
                 } elsif( $current->{sql} ne $new ) {
-                    push @{$todo->{drop_trigger}}, {
-                        desc => "Drop $time $action on $table trigger.",
-                        sql => "DROP TRIGGER IF EXISTS `$current->{name}`",
-		    };
-                    push @{$todo->{create_trigger}}, {
-                        desc => "Create $time $action on $table trigger.",
-                        sql => $create_sql,
-		    };
+                    $self->__queue_sql( 'drop_trigger',
+                        "Drop $time $action on $table trigger.",
+                        "DROP TRIGGER IF EXISTS `$current->{name}`",
+		    );
+                    $self->__queue_sql( 'create_trigger',
+                        "Create $time $action on $table trigger.",
+                        $create_sql,
+		    );
                 }
             }
         }
@@ -1342,10 +1350,10 @@ sub queue_push_trigger_definitions : method
                 next if $triggers{$table}{$action}{$time};
                 my $trigger = $current_triggers{$table}{$action}{$time};
 
-                push @{$todo->{drop_trigger}}, {
-                    desc => "Drop $time $action on $table trigger.",
-                    sql => "DROP TRIGGER IF EXISTS `$trigger->{name}`",
-		};
+                $self->__queue_sql( 'drop_trigger',
+                    "Drop $time $action on $table trigger.",
+                    "DROP TRIGGER IF EXISTS `$trigger->{name}`",
+		);
             }
         }
     }
@@ -1423,11 +1431,11 @@ sub queue_drop_procedure : method
 {
     my $self = shift;
     my($name) = @_;
-    my $todo = $self->{todo};
-    push @{ $todo->{drop_procedure} }, {
-        desc => "Drop procedure $name\n",
-        sql => "DROP PROCEDURE `$name`",
-    };
+
+    $self->__queue_sql( 'drop_procedure',
+        "Drop procedure $name\n",
+        "DROP PROCEDURE `$name`",
+    );
 }
 
 =item $o->queue_create_procedure ( $name, $sql )
@@ -1438,11 +1446,11 @@ sub queue_create_procedure : method
 {
     my $self = shift;
     my( $name, $sql ) = @_;
-    my $todo = $self->{todo};
-    push @{ $todo->{drop_procedure} }, {
-        desc => "Create procedure $name\n",
-        sql => $sql,
-    };
+
+    $self->__queue_sql( 'create_procedure',
+        "Create procedure $name\n",
+        $sql,
+    );
 }
 
 =item $o->queue_push_procedures ()
@@ -1468,8 +1476,6 @@ Handle the push command.
 sub push : method
 {
     my $self = shift;
-    my %todo = map {($_=>[])} TODO_ACTIONS;
-    $self->{todo} = \%todo;
 
     $self->__dbi_connect();
 
@@ -1477,9 +1483,23 @@ sub push : method
     $self->queue_push_trigger_definitions();
     $self->queue_push_procedures();
 
+    $self->run_queue();
+}
+
+=item $o->run_queue()
+
+Process any actions in todo queue. Returns number of actions executed.
+
+=cut
+
+sub run_queue : method
+{
+    my $self = shift;
+
     my $count = 0;
     for my $action ( TODO_ACTIONS ) {
-        for my $task ( @{$todo{$action}} ) {
+        while( @{ $self->{todo}{$action} } ) {
+            my $task = shift @{ $self->{todo}{$action} };
             ++$count;
             print $task->{desc},"\n";
 	    print "\n$task->{sql}\n\n" if $VERBOSE or $DRYRUN;
@@ -1490,9 +1510,7 @@ sub push : method
         }
     }
 
-    if( $count == 0 ) {
-        print "No updates need pushed.\n";
-    }
+    return $count;
 }
 
 =item $o->make_archive ()
