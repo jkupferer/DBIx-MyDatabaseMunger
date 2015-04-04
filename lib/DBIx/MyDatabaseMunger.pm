@@ -1267,11 +1267,13 @@ sub queue_drop_table : method
     );
 }
 
-=item $o->assemble_triggers ()
+=item $o->trigger_fragments ()
+
+Return list of trigger fragment names.
 
 =cut
 
-sub assemble_triggers : method
+sub trigger_fragments : method
 {
     my $self = shift;
 
@@ -1280,18 +1282,38 @@ sub assemble_triggers : method
     my $dh;
     opendir $dh, $dir;
 
-    my %triggers = ();
-    my @files = sort readdir $dh;
-    for my $file ( @files ) {
+    my @fragments = ();
+    for my $file ( sort readdir $dh ) {
         my($name,$time,$action,$table) =
             $file =~ m/^(.+)\.(before|after)\.(insert|update|delete)\.(.+)\.sql$/
             or next;
+        push @fragments, {
+            action => $action,
+            file => $file,
+            name => $name,
+            table => $table,
+            time => $time,
+        };
+    }
 
-        # Slurp file.
-        local $/;
-        open my $fh, "<", "$dir/$file";
-	my $sql = <$fh>;
-	close $fh;
+    return @fragments;
+}
+
+=item $o->assemble_triggers ()
+
+Assemble trigger fragments into nested hash of triggers.
+
+=cut
+
+sub assemble_triggers : method
+{
+    my $self = shift;
+
+    my %triggers = ();
+    for my $fragment ( $self->trigger_fragments ) {
+
+        my $sql = $self->read_trigger_fragment_sql( $fragment );
+        my($table,$action,$time,$name) = @{$fragment}{'table','action','time','name'};
 
 	$triggers{$table} ||= {};
 	$triggers{$table}{$action} ||= {};
@@ -1300,6 +1322,25 @@ sub assemble_triggers : method
     }
 
     return %triggers;
+}
+
+=item $o->read_trigger_fragment_sql ( \%fragment )
+
+=cut
+
+sub read_trigger_fragment_sql : method
+{
+    my $self = shift;
+    my( $fragment ) = @_;
+
+    # Slurp file.
+    local $/;
+    my $dir = "$self->{dir}/trigger";
+    open my $fh, "<", "$dir/$fragment->{file}";
+    my $sql = <$fh>;
+    close $fh;
+
+    return $sql;
 }
 
 =item $o->queue_push_trigger_definitions()
