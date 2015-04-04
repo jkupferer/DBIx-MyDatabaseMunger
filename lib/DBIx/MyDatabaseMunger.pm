@@ -149,6 +149,26 @@ sub new
 
 =head1 METHODS
 
+=cut
+
+#
+# PRIVATE UTILITY FUNCTIONS
+#
+
+# Function to determine whether a table should be ignored based on the tables
+# setting.
+sub __ignore_table : method
+{
+    my $self = shift;
+    my($name) = @_;
+
+    # Don't skip any tables if tables list is empty.
+    return 0 unless @{ $self->{tables} };
+
+    # Skip table if not listed expliitly in tables.
+    return ( grep { $name eq $_ } @{ $self->{tables} } ) ? 0 : 1;
+}
+
 =over 4
 
 =item C<table_names ()>
@@ -816,28 +836,26 @@ sub pull_table_definitions : method
     my %db_table = ();
 
     for my $name ( $self->query_table_names ) {
-        # Skip tables not listed if an explicit list of tables is given.
-        if( @{ $self->{tables} } ) {
-            next unless grep { $name eq $_ } @{ $self->{tables} };
-        }
+
+        next if $self->__ignore_table( $name );
+
         $db_table{ $name } = 1;
         pull_table_definition( $self, $name );
     }
 
     if( $self->{remove_tables} ) {
         for my $name ( $self->table_names ) {
-            # Skip tables not listed if an explicit list of tables is given.
-            if( @{ $self->{tables} } ) {
-                next unless grep { $name eq $_ } @{ $self->{tables} };
-            }
-            # Skip table found in the database.
+            next if $self->__ignore_table( $name );
+
+            # Don't remove this table, it was found in the database.
             next if $db_table{$name};
+
             $self->remove_table_sql( $name );
         }
     }
 }
 
-=item $o->pull_trigger_definitions()
+=item $o->pull_trigger_definitions ()
 
 =cut
 
@@ -878,10 +896,7 @@ sub pull_trigger_fragments : method
 
     for my $table ( sort keys %triggers ) {
 
-        if( @{ $self->{tables} } ) {
-            # Skip triggers for table based on explicit table list.
-            next unless grep { $_ eq $table } @{ $self->{tables} };
-        }
+        next if $self->__ignore_table( $table );
 
         for my $action ( sort keys %{$triggers{$table}} ) {
             for my $time ( sort keys %{$triggers{$table}{$action}} ) {
@@ -1205,19 +1220,16 @@ sub queue_push_table_definitions : method
     my @tables = $self->table_names;
 
     for my $name ( @tables ) {
-        # Skip tables not listed if an explicit list of tables is given.
-        if( @{ $self->{tables} } ) {
-            next unless grep { $name eq $_ } @{ $self->{tables} };
-        }
+
+        next if $self->__ignore_table( $name );
+
         $self->queue_push_table_definition( $name );
     }
 
     if( $self->{remove_tables} ) {
         for my $name ( $self->query_table_names ) {
-            # Skip tables not listed if an explicit list of tables is given.
-            if( @{ $self->{tables} } ) {
-                next unless grep { $name eq $_ } @{ $self->{tables} };
-            }
+
+            next if $self->__ignore_table( $name );
 
             # Skip tables that are defined locally
             next if grep { $name eq $_ } @tables;
@@ -1291,10 +1303,7 @@ sub queue_push_trigger_definitions : method
 
     for my $table ( sort keys %triggers ) {
 
-        if( @{ $self->{tables} } ) {
-            # Skip triggers for table based on explicit table list.
-            next unless grep { $_ eq $table } @{ $self->{tables} };
-        }
+        next if $self->__ignore_table( $table );
 
         for my $action ( sort keys %{$triggers{$table}} ) {
             for my $time ( sort keys %{$triggers{$table}{$action}} ) {
@@ -1325,10 +1334,7 @@ sub queue_push_trigger_definitions : method
     # Check if any triggers should be dropped.
     for my $table ( sort keys %current_triggers ) {
 
-        if( @{ $self->{tables} } ) {
-            # Skip triggers for table based on explicit table list.
-            next unless grep { $_ eq $table } @{ $self->{tables} };
-        }
+        next if $self->__ignore_table( $table );
 
         for my $action ( sort keys %{$current_triggers{$table}} ) {
             for my $time ( sort keys %{$current_triggers{$table}{$action}} ) {
