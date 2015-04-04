@@ -197,7 +197,22 @@ sub __ignore_table : method
     return 0 unless @{ $self->{tables} };
 
     # Skip table if not listed expliitly in tables.
-    return ( grep { $name eq $_ } @{ $self->{tables} } ) ? 0 : 1;
+    for my $t ( @{ $self->{tables} } ) {
+        return 0 if $name eq $t;
+
+        # On to the next table unless this one is a wildcard.
+        next unless $t =~ m/%/;
+
+	# Build regex by splitting table specification on '%' and replacing
+	# it with '.*'. Make sure interemediate chunks of the specification
+	# are regex quoted with qr using \Q...\E. Then add beginning and end
+	# of string anchors, '^' and '$'.
+        my $re = '^'.join('.*', map { qr/\Q$_\E/ } split '%', $t, -1 ).'$';
+
+        # Don't ignor table if the regex matches.
+        return 0 if $name =~ $re;
+    }
+    return 1;
 }
 
 ### $self->__queue_sql ( $action, $desc, $sql )
