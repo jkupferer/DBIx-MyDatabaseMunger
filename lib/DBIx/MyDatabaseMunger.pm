@@ -885,8 +885,8 @@ sub query_procedure_names : method
     my $self = shift;
     my $dbh = $self->{dbh};
 
-    my $sth = $dbh->prepare( 'SHOW PROCEDURE STATUS' );
-    $sth->execute();
+    my $sth = $dbh->prepare( 'SHOW PROCEDURE STATUS WHERE Db=?' );
+    $sth->execute($self->{connect}{schema});
 
     my @names = ();
     while( my $procedure = $sth->fetchrow_hashref() ) {
