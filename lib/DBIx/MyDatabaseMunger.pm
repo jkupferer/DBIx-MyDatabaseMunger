@@ -1491,6 +1491,7 @@ sub procedure_names
 {
     my $self = shift;
     my @names;
+    return () unless -d "$self->{dir}/procedure";
 
     opendir my $dh, "$self->{dir}/procedure";
     while( my $sql = readdir $dh ) {
