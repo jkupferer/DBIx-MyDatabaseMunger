@@ -52,12 +52,12 @@ OPTIONS FOR COMMAND pull OR push:
   -p, --password[=PASSWORD] 
                       Password to use when connecting to server. If password is
                       not provided on the command line it will asked from the
-                      tty.
+                      terminal.
   -P, --port=#        Port number to use for connection or 0 for default to, in
                       order of preference, my.cnf, \$MYSQL_TCP_PORT,
                       /etc/services, built-in default (3306).
       --remove=[any|procedure|table|trigger]
-                      Remove unmatched procedures, tables, or triggres from the
+                      Remove unmatched procedures, tables, or triggers from the
                       local directories on pull or from the database on push.
   -s, --schema=DATABASE
                       MySQL/MariaDB database schema.
@@ -78,7 +78,7 @@ OPTIONS FOR COMMAND make-archive:
                       Column name used in the source data and archive tables
                       used to track record creation time. This must be a
                       TIMESTAMP or DATETIME data type. If option this option
-                      is given without a vaulue then the column name "ctime"
+                      is given without a value then the column name "ctime"
                       will be used. Default is no creation time handling.
       --dbusercol=COLUMN
                       Column name to be used in archive table to store the
