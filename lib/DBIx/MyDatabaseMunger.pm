@@ -803,7 +803,7 @@ sub write_archive_trigger_fragments : method
     $self->write_trigger_fragment_sql( "40-archive","after","delete",$table->{name},$fragment.
         "  OLD.`".join('`, OLD.`', @cols)."`,\n" .
         "  ".join(', ', map {
-            $_ eq 'action'   ? "'update'" :
+            $_ eq 'action'   ? "'delete'" :
             $_ eq 'updid'    ? $self->{updidvar} :
             $_ eq 'ctime'    ? "OLD.`$colname->{ctime}`" :
             $_ eq 'dbuser'   ? "USER()" :
