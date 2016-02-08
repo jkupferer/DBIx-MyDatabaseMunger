@@ -735,7 +735,13 @@ sub write_archive_trigger_fragments : method
 
 
     # Before insert
-    $fragment = "SET NEW.`$colname->{revision}` = 0;\n";
+    #$fragment = "SET NEW.`$colname->{revision}` = 0;\n";
+    $fragment =
+        "SET NEW.`$colname->{revision}` = (\n" .
+        "  SELECT IFNULL( MAX(`$colname->{revision}`) + 1, 0 )\n" .
+        "  FROM `$archive_table->{name}`\n" .
+        "  WHERE ".join(" AND ", map { "`$_` = NEW.`$_`" } @{$table->{primary_key}})."\n" .
+        ");\n";
     $fragment .= "SET NEW.`$colname->{ctime}` = CURRENT_TIMESTAMP;\n"
         if $colname->{ctime} and $table->{column_definition}{ $colname->{ctime} };
     $fragment .= "SET NEW.`$colname->{mtime}` = CURRENT_TIMESTAMP;\n"
