@@ -1172,7 +1172,7 @@ sub constraint_sql : method
         . join('`,`',@{$constraint->{columns}})
         ."`) REFERENCES `$constraint->{reference_table}` (`"
         .join('`,`',@{$constraint->{reference_columns}})
-        ."`) ".$constraint->{cascade_opt};
+        ."`)".($constraint->{cascade_opt} ? " $constraint->{cascade_opt}" : '');
 }
 
 =item $o->queue_add_table_constraint ( $table, $constraint )
