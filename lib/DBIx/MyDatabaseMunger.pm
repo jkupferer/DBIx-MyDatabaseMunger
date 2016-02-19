@@ -1097,7 +1097,7 @@ sub pull : method
 {
     my $self = shift;
 
-    $self->__dbi_connect();
+    $self->__dbi_connect() unless $self->{dbh} and $self->{dbh}->ping;
 
     $self->pull_table_definitions();
     $self->pull_trigger_fragments();
@@ -1615,7 +1615,7 @@ sub push : method
 {
     my $self = shift;
 
-    $self->__dbi_connect();
+    $self->__dbi_connect() unless $self->{dbh} and $self->{dbh}->ping;
 
     $self->queue_push_table_definitions();
     $self->queue_push_trigger_definitions();
@@ -1706,6 +1706,19 @@ sub make_archive : method
 
         $self->write_archive_trigger_fragments( $table, $archive_table );
     }
+}
+
+=item $o->set_dbh ()
+
+Explicitly set the database handle.
+
+=cut
+
+sub set_dbh : method
+{
+    my $self = shift;
+    my($dbh) = @_;
+    $self->{dbh} = $dbh;
 }
 
 =back
