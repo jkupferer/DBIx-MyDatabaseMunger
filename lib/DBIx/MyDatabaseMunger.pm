@@ -38,6 +38,7 @@ use Storable qw(dclone freeze);
 
 our $VERSION = 0.005;
 our $DRYRUN = 0;
+our $QUIET = 0;
 our $VERBOSE = 0;
 
 # When running the todo list, do these things in this order.
@@ -1639,7 +1640,7 @@ sub run_queue : method
         while( @{ $self->{todo}{$action} } ) {
             my $task = shift @{ $self->{todo}{$action} };
             ++$count;
-            print $task->{desc},"\n";
+            print $task->{desc},"\n" unless $QUIET;
             print "\n$task->{sql}\n\n" if $VERBOSE or $DRYRUN;
             eval {
                 $self->{dbh}->do( $task->{sql} ) unless $DRYRUN;
