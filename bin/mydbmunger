@@ -150,6 +150,9 @@ sub read_config ($$)
     if( $conf->{tables} and not @{ $opt->{tables} } ) {
         $opt->{tables} = $conf->{tables};
     }
+    if( $conf->{exclude_tables} and not @{ $opt->{exclude_tables} } ) {
+        $opt->{exclude_tables} = $conf->{exclude_tables};
+    }
 
     return $opt;
 }
