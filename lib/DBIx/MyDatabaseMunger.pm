@@ -197,6 +197,23 @@ sub __ignore_table : method
     # Don't skip any tables if tables list is empty.
     return 0 unless @{ $self->{tables} };
 
+    # Skip table if explicitly excluded.
+    for my $t ( @{ $self->{exclude_tables} } ) {
+        return 1 if $name eq $t;
+
+        # On to the next table unless this one is a wildcard.
+        next unless $t =~ m/%/;
+
+	# Build regex by splitting table specification on '%' and replacing
+	# it with '.*'. Make sure interemediate chunks of the specification
+	# are regex quoted with qr using \Q...\E. Then add beginning and end
+	# of string anchors, '^' and '$'.
+        my $re = '^'.join('.*', map { qr/\Q$_\E/ } split '%', $t, -1 ).'$';
+
+        # Don't ignor table if the regex matches.
+        return 1 if $name =~ $re;
+    }
+
     # Skip table if not listed expliitly in tables.
     for my $t ( @{ $self->{tables} } ) {
         return 0 if $name eq $t;

@@ -38,6 +38,9 @@ GENERAL OPTIONS:
                       Specify for which tables to perform the given COMMAND. If
                       not provided, then we will attempt to detect suitable
                       tables automatically.
+  -T, --exclude-table=TABLE[,TABLE]...
+                      Specify for which tables to exclude. This option
+                      overrides tables included with --table=TABLE.
   -v, --verbose       Show verbose messages.
 
 OPTIONS FOR COMMAND pull OR push:
@@ -174,6 +177,7 @@ sub parse_commandline
     # General options.
     my $config;
     my $dir;
+    my @exclude_tables;
     my @tables;
     # $VERBOSE is global in DBIx::myDatabaseMunger
 
@@ -204,6 +208,7 @@ sub parse_commandline
         "c|config=s" => \$config,
         "D|dir=s" => \$dir,
         "t|table=s" => \@tables,
+        "T|exclude-table=s" => \@exclude_tables,
         "v|verbose" => \$DBIx::MyDatabaseMunger::VERBOSE,
         # pull/push options
         "drop-columns" => \$drop_columns,
@@ -242,6 +247,7 @@ sub parse_commandline
 
     # Allow commas in table option.
     @tables = map { split(',') } @tables;
+    @exclude_tables = map { split(',') } @exclude_tables;
 
     # Strip trailing slash from directory option.
     $dir =~ s{/$}{} if $dir;
@@ -251,6 +257,7 @@ sub parse_commandline
         dir => $dir,
         drop_columns => $drop_columns,
         tables => \@tables,
+        exclude_tables => \@exclude_tables,
         connect => {
             schema => $schema,
             host => $host,
