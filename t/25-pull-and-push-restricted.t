@@ -23,7 +23,7 @@ ok( $ret == 0, "run pull" );
 
 clear_database();
 
-$ret = system( @cmdroot, qw(-t User push) );
+$ret = system( @cmdroot, qw(-t User -v '' push) );
 ok( $ret == 0, "clear then push" );
 
 clear_directories();

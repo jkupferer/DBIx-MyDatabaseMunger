@@ -38,6 +38,7 @@ $ret = system(qw(diff -ur procedure t/60-remove-tables.noremove.d/procedure));
 ok( $ret == 0, "check pull procedure sql" );
 
 unlink "table/Service.sql";
+unlink "view/ServiceWithOwner.sql";
 
 $ret = system( @cmdroot, "--remove=any", "push" );
 ok( $ret == 0, "push with --remove=any" );

@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 10;
+use Test::More tests => 11;
 
 sub write_modification
 {
@@ -20,6 +20,15 @@ CREATE TABLE `Service` (
   CONSTRAINT `Service_owner` FOREIGN KEY (`owner_id`) REFERENCES `User` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COMMENT='A User''s Service'
 EOF
+    close $fh;
+
+    open $fh, ">", "view/ServiceWithOwner.sql";
+    print $fh <<EOF;
+CREATE VIEW `ServiceWithOwner` AS
+SELECT s.name service_name, o.name owner_name, o.email owner_email
+FROM Service s JOIN User o ON s.owner_id=o.id;
+EOF
+    close $fh;
 }
 
 use lib 'lib';
@@ -68,6 +77,9 @@ ok( $ret == 0, "pull again" );
 
 $ret = system(qw(diff -ur table t/50-drop-columns.yesdrop.d/table));
 ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur view t/50-drop-columns.yesdrop.d/view));
+ok( $ret == 0, "check pull view sql" );
 
 $ret = system(qw(diff -ur procedure t/50-drop-columns.yesdrop.d/procedure));
 ok( $ret == 0, "check pull procedure sql" );
