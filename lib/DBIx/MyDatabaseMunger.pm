@@ -35,17 +35,22 @@ use strict;
 use warnings;
 use autodie;
 use Storable qw(dclone freeze);
+use SQL::QueryBuilder::Pretty ();
 
 our $VERSION = 0.005;
 our $DRYRUN = 0;
 our $QUIET = 0;
 our $VERBOSE = 0;
+our $SQL_PRETTY = SQL::QueryBuilder::Pretty->new(
+    '-database' => 'MySQL',
+);
 
 # When running the todo list, do these things in this order.
 use constant TODO_ACTIONS => qw(
 drop_constraint
 drop_trigger
 drop_procedure
+drop_view
 drop_key
 drop_column
 drop_table
@@ -54,6 +59,7 @@ add_column
 modify_column
 add_key
 add_constraint
+create_view
 create_procedure
 create_trigger
 );
@@ -300,6 +306,23 @@ sub __queue_sql : method
         desc => $desc,
         sql => $sql,
     };
+}
+
+sub __beautify_view
+{
+    my $self = shift;
+    my($sql) = @_;
+    $sql =~ s/` `/` AS `/g;
+    $sql = $SQL_PRETTY->print($sql);
+    $sql =~ s/ ALGORITHM=/\n  ALGORITHM=/;
+    $sql =~ s/ DEFINER=/\n  DEFINER=/;
+    $sql =~ s/ SQL SECURITY /\n  SQL SECURITY /;
+    $sql =~ s/ VIEW `([^`]+)` AS /\nVIEW `$1` AS\n/;
+    $sql =~ s/` *AS /` AS /g;
+    $sql =~ s/^(select) /SELECT\n/im;
+    $sql =~ s/ from \(/\nFROM (/i;
+    $sql .= "\n";
+    return $sql;
 }
 
 =over 4
@@ -1321,7 +1344,7 @@ sub query_view_sql : method
     $sth->execute();
     my @row = $sth->fetchrow_array;
 
-    return "$row[1]\n";
+    return $self->__beautify_view($row[1]);
 }
 
 =item $o->pull_view_definition ( $name )
@@ -1351,7 +1374,7 @@ sub query_view_names : method
     my $self = shift;
     my $dbh = $self->{dbh};
 
-    my $sth = $dbh->prepare( "SHOW FULL VIEWS WHERE Table_type='VIEW'" );
+    my $sth = $dbh->prepare( "SHOW FULL TABLES WHERE Table_type='VIEW'" );
     $sth->execute();
 
     my @views = ();
@@ -1360,6 +1383,22 @@ sub query_view_names : method
     }
 
     return @views;
+}
+
+=item $o->queue_create_view( $new_sql )
+
+=cut
+
+sub queue_create_view : method
+{
+    my $self = shift;
+    my( $name, $sql ) = @_;
+    $sql =~ s/^CREATE/CREATE OR REPLACE/i;
+
+    $self->__queue_sql( 'create_view',
+        "Create view $name.",
+        $sql
+    );
 }
 
 =item $o->push_view_definition( $view )
@@ -1378,12 +1417,11 @@ sub queue_push_view_definition : method
         $current_sql = $self->query_view_sql( $name );
     };
 
-    if( $current_sql ) {
-        $self->queue_view_updates( $current_sql, $new_sql );
-    } else {
-        $self->queue_create_view( $new_sql );
+    if( $current_sql and $current_sql ne $new_sql) {
+        $self->queue_drop_view( $name );
     }
 
+    $self->queue_create_view( $name, $new_sql );
 }
 
 =item $o->push_view_definitions()
@@ -1917,6 +1955,7 @@ sub pull : method
     $self->__dbi_connect() unless $self->{dbh} and $self->{dbh}->ping;
 
     $self->pull_table_definitions();
+    $self->pull_view_definitions();
     $self->pull_trigger_fragments();
     $self->pull_procedures();
 }
@@ -1934,6 +1973,7 @@ sub push : method
     $self->__dbi_connect() unless $self->{dbh} and $self->{dbh}->ping;
 
     $self->queue_push_table_definitions();
+    $self->queue_push_view_definitions();
     $self->queue_push_trigger_definitions();
     $self->queue_push_procedures();
 

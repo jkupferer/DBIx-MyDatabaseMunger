@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 4;
+use Test::More tests => 5;
 
 use lib 'lib';
 use_ok('DBIx::MyDatabaseMunger');
@@ -25,5 +25,8 @@ ok( $ret == 0, "check table sql" );
 
 $ret = system(qw(diff -ur procedure t/10-pull.d/procedure));
 ok( $ret == 0, "check procedure sql" );
+
+$ret = system(qw(diff -ur view t/10-pull.d/view));
+ok( $ret == 0, "check view sql" );
 
 exit 0;

@@ -41,7 +41,13 @@ GENERAL OPTIONS:
   -T, --exclude-table=TABLE[,TABLE]...
                       Specify for which tables to exclude. This option
                       overrides tables included with --table=TABLE.
-  -v, --verbose       Show verbose messages.
+  -v, --view=VIEW[,VIEW]...
+                      Specify for which viewss to perform the given COMMAND. If
+                      not provided then views we will be detected automatically.
+  -V, --exclude-view=VIEW[,VIEW]...
+                      Specify for which views to exclude. This option overrides
+                      views included with --view=VIEW.
+  -d, --debug         Show verbose messages.
 
 OPTIONS FOR COMMAND pull OR push:
       --drop-columns  Drop unmatched columns in database on push.
@@ -59,7 +65,7 @@ OPTIONS FOR COMMAND pull OR push:
   -P, --port=#        Port number to use for connection or 0 for default to, in
                       order of preference, my.cnf, \$MYSQL_TCP_PORT,
                       /etc/services, built-in default (3306).
-      --remove=[any|procedure|table|trigger]
+      --remove=[any|procedure|table|trigger|view]
                       Remove unmatched procedures, tables, or triggers from the
                       local directories on pull or from the database on push.
   -s, --schema=DATABASE
@@ -147,11 +153,19 @@ sub read_config ($$)
     }
     $opt->{remove} = $conf->{remove}
         if $conf->{remove} and not defined $opt->{remove};
+
     if( $conf->{tables} and not @{ $opt->{tables} } ) {
         $opt->{tables} = $conf->{tables};
     }
     if( $conf->{exclude_tables} and not @{ $opt->{exclude_tables} } ) {
         $opt->{exclude_tables} = $conf->{exclude_tables};
+    }
+
+    if( $conf->{views} and not @{ $opt->{views} } ) {
+        $opt->{views} = $conf->{views};
+    }
+    if( $conf->{exclude_views} and not @{ $opt->{exclude_views} } ) {
+        $opt->{exclude_views} = $conf->{exclude_views};
     }
 
     return $opt;
@@ -182,6 +196,8 @@ sub parse_commandline
     my $dir;
     my @exclude_tables;
     my @tables;
+    my @exclude_views;
+    my @views;
     # $VERBOSE is global in DBIx::myDatabaseMunger
 
     # pull/push options
@@ -212,7 +228,9 @@ sub parse_commandline
         "D|dir=s" => \$dir,
         "t|table=s" => \@tables,
         "T|exclude-table=s" => \@exclude_tables,
-        "v|verbose" => \$DBIx::MyDatabaseMunger::VERBOSE,
+        "v|view=s" => \@views,
+        "V|exclude-view=s" => \@exclude_views,
+        "d|debug" => \$DBIx::MyDatabaseMunger::VERBOSE,
         # pull/push options
         "drop-columns" => \$drop_columns,
         "d|dryrun" => \$DBIx::MyDatabaseMunger::DRYRUN,
@@ -248,9 +266,11 @@ sub parse_commandline
     $mtimecol = 'mtime'
         if defined $mtimecol and not $mtimecol;
 
-    # Allow commas in table option.
+    # Allow commas in table and view options.
     @tables = map { split(',') } @tables;
     @exclude_tables = map { split(',') } @exclude_tables;
+    @views = map { split(',') } @views;
+    @exclude_views = map { split(',') } @exclude_views;
 
     # Strip trailing slash from directory option.
     $dir =~ s{/$}{} if $dir;
@@ -261,6 +281,8 @@ sub parse_commandline
         drop_columns => $drop_columns,
         tables => \@tables,
         exclude_tables => \@exclude_tables,
+        views => \@views,
+        exclude_views => \@exclude_views,
         connect => {
             schema => $schema,
             host => $host,
@@ -291,7 +313,7 @@ sub parse_commandline
     # value.
     if( $opt->{remove} ) {
         if( $opt->{remove} eq 'any' ) {
-            $opt->{remove} = { table => 1, trigger => 1, procedure => 1 };
+            $opt->{remove} = { procedure => 1, table => 1, trigger => 1, view => 1 };
         } else {
             $opt->{remove} = { map { ($_=>1) } split ',', $opt->{remove} };
         }

@@ -1,7 +1,17 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 9;
+use Test::More tests => 7;
+
+sub write_modification
+{
+    open my $fh, ">", "view/ServiceWithOwner.sql";
+    print $fh <<EOF;
+CREATE VIEW `ServiceWithOwner` AS
+SELECT s.name service_name, s.description service_description, o.name owner_name
+FROM Service s JOIN User o ON s.owner_id=o.id;
+EOF
+}
 
 use lib 'lib';
 use_ok('DBIx::MyDatabaseMunger');
@@ -21,29 +31,23 @@ my $ret;
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "run pull" );
 
-$ret = system(qw(diff -ur table t/20-pull-and-push.d/table));
-ok( $ret == 0, "check pull table sql" );
-
-$ret = system(qw(diff -ur procedure t/20-pull-and-push.d/procedure));
-ok( $ret == 0, "check pull procedure sql" );
-
-clear_database();
+write_modification();
 
 $ret = system( @cmdroot, "push" );
-ok( $ret == 0, "clear then push" );
+ok( $ret == 0, "push modified view" );
 
 clear_directories();
 
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull again" );
 
-$ret = system(qw(diff -ur table t/20-pull-and-push.d/table));
+$ret = system(qw(diff -ur table t/55-modify-view.d/table));
 ok( $ret == 0, "check pull table sql" );
 
-$ret = system(qw(diff -ur view t/20-pull-and-push.d/view));
-ok( $ret == 0, "check pull view sql" );
-
-$ret = system(qw(diff -ur procedure t/20-pull-and-push.d/procedure));
+$ret = system(qw(diff -ur procedure t/55-modify-view.d/procedure));
 ok( $ret == 0, "check pull procedure sql" );
+
+$ret = system(qw(diff -ur view t/55-modify-view.d/view));
+ok( $ret == 0, "check pull view sql" );
 
 exit 0;

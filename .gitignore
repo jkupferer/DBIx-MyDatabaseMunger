@@ -3,6 +3,11 @@ MYMETA.json
 MYMETA.yml
 _build/
 blib/
-procedure
-table
-trigger
+procedure/
+table/
+trigger/
+view/
+!t/**/procedure
+!t/**/table
+!t/**/trigger
+!t/**/view

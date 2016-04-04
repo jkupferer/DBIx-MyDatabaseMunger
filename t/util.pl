@@ -27,6 +27,12 @@ sub t_drop_table ($)
     $dbh->do( "DROP TABLE `$table`" );
 }
 
+sub t_drop_view ($)
+{
+    my($view) = @_;
+    $dbh->do( "DROP VIEW `$view`" );
+}
+
 sub clear_database ()
 {
     my $sth;
@@ -45,8 +51,15 @@ sub clear_database ()
         $dbh->do("ALTER TABLE `$table` DROP FOREIGN KEY `$constraint`");
     }
     
+    # Drop all views...
+    $sth = $dbh->prepare( "SHOW FULL TABLES WHERE Table_type='VIEW'" );
+    $sth->execute();
+    while( my( $table ) = $sth->fetchrow_array() ) {
+        t_drop_view( $table );
+    }
+
     # Drop all tables...
-    $sth = $dbh->prepare("SHOW TABLES");
+    $sth = $dbh->prepare( "SHOW FULL TABLES WHERE Table_type='BASE TABLE'" );
     $sth->execute();
     while( my( $table ) = $sth->fetchrow_array() ) {
         t_drop_table( $table );
@@ -61,6 +74,8 @@ sub clear_directories ()
     rmdir "trigger";
     unlink glob "procedure/*";
     rmdir "procedure";
+    unlink glob "view/*";
+    rmdir "view";
 }
 
 sub run_mysql ($)
