@@ -209,7 +209,7 @@ sub __ignore_table : method
 	    # end of string anchors, '^' and '$'.
             my $re = '^'.join('.*', map { qr/\Q$_\E/ } split '%', $t, -1 ).'$';
 
-            # Don't ignor table if the regex matches.
+            # Ignore table if the regex matches.
             return 1 if $name =~ $re;
         }
     }
@@ -230,7 +230,58 @@ sub __ignore_table : method
 	# of string anchors, '^' and '$'.
         my $re = '^'.join('.*', map { qr/\Q$_\E/ } split '%', $t, -1 ).'$';
 
-        # Don't ignor table if the regex matches.
+        # Don't ignore table if the regex matches.
+        return 0 if $name =~ $re;
+    }
+    return 1;
+}
+
+### $self->__ignore_view ( $name )
+#
+# Determine whether a view should be ignored based on the views setting.
+#
+sub __ignore_view : method
+{
+    my $self = shift;
+    my($name) = @_;
+
+
+    # Skip view if explicitly excluded.
+    if( $self->{exclude_views} ) {
+        for my $v ( @{ $self->{exclude_views} } ) {
+            return 1 if $name eq $v;
+
+            # On to the next view unless this one is a wildcard.
+            next unless $v =~ m/%/;
+
+	    # Build regex by splitting view specification on '%' and replacing
+	    # it with '.*'. Make sure interemediate chunks of the specification
+	    # are regex quoted with qr using \Q...\E. Then add beginning and
+	    # end of string anchors, '^' and '$'.
+            my $re = '^'.join('.*', map { qr/\Q$_\E/ } split '%', $v, -1 ).'$';
+
+            # Ignore view if the regex matches.
+            return 1 if $name =~ $re;
+        }
+    }
+
+    # Don't skip any more views if views list is empty.
+    return 0 unless @{ $self->{views} };
+
+    # Skip view if not listed expliitly in views.
+    for my $v ( @{ $self->{views} } ) {
+        return 0 if $name eq $v;
+
+        # On to the next view unless this one is a wildcard.
+        next unless $v =~ m/%/;
+
+	# Build regex by splitting view specification on '%' and replacing
+	# it with '.*'. Make sure interemediate chunks of the specification
+	# are regex quoted with qr using \Q...\E. Then add beginning and end
+	# of string anchors, '^' and '$'.
+        my $re = '^'.join('.*', map { qr/\Q$_\E/ } split '%', $v, -1 ).'$';
+
+        # Don't ignore view if the regex matches.
         return 0 if $name =~ $re;
     }
     return 1;
@@ -659,30 +710,6 @@ sub remove_table_sql : method
     unlink "$self->{dir}/table/$name.sql";
 }
 
-=item $o->remove_trigger_fragment( $fragment )
-
-Remove trigger fragment SQL.
-
-=cut
-
-sub remove_trigger_fragment : method
-{
-    my $self = shift;
-    my( $fragment ) = @_;
-    unlink "$self->{dir}/trigger/$fragment->{file}";
-}
-
-=item $o->remove_procedure_sql( $name )
-
-=cut
-
-sub remove_procedure_sql : method
-{
-    my $self = shift;
-    my( $name ) = @_;
-    unlink "$self->{dir}/procedure/$name.sql";
-}
-
 =item $o->write_table_definition( $table )
 
 Write create table SQL for given table description.
@@ -713,6 +740,19 @@ sub write_table_definition : method
     $sql .= ") ENGINE=$table->{engine} $table->{table_options} COMMENT='$comment'\n";
 
     $self->write_table_sql( $table->{name}, $sql );
+}
+
+=item $o->remove_trigger_fragment( $fragment )
+
+Remove trigger fragment SQL.
+
+=cut
+
+sub remove_trigger_fragment : method
+{
+    my $self = shift;
+    my( $fragment ) = @_;
+    unlink "$self->{dir}/trigger/$fragment->{file}";
 }
 
 =item $o->write_trigger_fragment_sql( $name, $time, $action, $table, $sql )
@@ -883,46 +923,6 @@ sub pull_table_definition : method
     $self->write_table_sql( $name, $sql );
 }
 
-=item $o->query_table_names ()
-
-=cut
-
-sub query_table_names : method
-{
-    my $self = shift;
-    my $dbh = $self->{dbh};
-
-    my $sth = $dbh->prepare( 'SHOW TABLES' );
-    $sth->execute();
-
-    my @tables = ();
-    while( my($name) = $sth->fetchrow_array ) {
-        push @tables, $name;
-    }
-
-    return @tables;
-}
-
-=item $o->query_procedure_names ()
-
-=cut
-
-sub query_procedure_names : method
-{
-    my $self = shift;
-    my $dbh = $self->{dbh};
-
-    my $sth = $dbh->prepare( 'SHOW PROCEDURE STATUS WHERE Db=?' );
-    $sth->execute($self->{connect}{schema});
-
-    my @names = ();
-    while( my $procedure = $sth->fetchrow_hashref() ) {
-        push @names, $procedure->{Name};
-    }
-
-    return @names;
-}
-
 =item $o->pull_table_definitions ()
 
 =cut
@@ -957,172 +957,6 @@ sub pull_table_definitions : method
             $self->remove_table_sql( $name );
         }
     }
-}
-
-=item $o->pull_trigger_definitions ()
-
-=cut
-
-sub pull_trigger_definitions : method
-{
-    my $self = shift;
-    my $dbh = $self->{dbh};
-
-    my $list_sth = $dbh->prepare( 'SHOW TRIGGERS' );
-    $list_sth->execute();
-
-    my %triggers;
-    while( my($trigger_name,$action,$table,$sql,$time) = $list_sth->fetchrow_array() ) {
-
-        next if $self->__ignore_table( $table );
-
-        # Strip off BEGIN and END from trigger body
-        $sql =~ s/^\s*BEGIN\s*(.*)END\s*$/$1/s;
-
-        # Lowercase is easier to read
-        $action = lc $action;
-        $time = lc $time;
-
-        $triggers{$table}{$action}{$time} = { sql => $sql, name => $trigger_name };
-    }
-
-    return %triggers;
-}
-
-=item $o->pull_trigger_fragments : method
-
-=cut
-
-sub pull_trigger_fragments : method
-{
-    my($self) = @_;
-
-    my %triggers = pull_trigger_definitions( $self );
-
-    # Variable to track fragments.
-    my %found_fragments = ();
-
-    for my $table ( sort keys %triggers ) {
-
-        next if $self->__ignore_table( $table );
-
-        for my $action ( sort keys %{$triggers{$table}} ) {
-            for my $time ( sort keys %{$triggers{$table}{$action}} ) {
-                my $trigger_sql = $triggers{$table}{$action}{$time}{sql};
-
-                # Parse all tagged trigger fragments
-                while( $trigger_sql =~ s{/\*\* begin (\S+) \*/\s*(.*)/\*\* end \1 \*/\s*}{}s ) {
-                    my( $name, $sql ) = ($1,$2);
-                    $self->write_trigger_fragment_sql( $name, $time, $action, $table, $sql );
-                    $found_fragments{$table}{$action}{$time}{$name} = 1;
-                }
-
-                # Handle any untagged trigger SQL?
-                $trigger_sql =~ s/\s*$//;
-                if( $trigger_sql ) {
-                    if( $self->{init_trigger_name} ) {
-                        my $name = $self->{init_trigger_name};
-                        $self->write_trigger_fragment_sql( $name, $time, $action, $table, $trigger_sql );
-                        $found_fragments{$table}{$action}{$time}{$name} = 1;
-                    } else {
-                        die "Found unlabeled trigger code for $time $action `$table`!\n$trigger_sql\nDo you need to specify --init-trigger-name=NAME?\n";
-                    }
-                }
-            }
-        }
-    }
-
-    # Remove trigger fragmentn not found during pull.
-    if( $self->{remove}{trigger} ) {
-        for my $fragment ( $self->trigger_fragments ) {
-            my($table,$action,$time,$name) = @{$fragment}{'table','action','time','name'};
-            next if $found_fragments{$table}{$action}{$time}{$name};
-
-            $self->remove_trigger_fragment( $fragment );
-        }
-    }
-}
-
-=item $o->pull_procedure_sql ( $name )
-
-=cut
-
-sub pull_procedure_sql : method
-{
-    my $self = shift;
-    my($name) = @_;
-    my $dbh = $self->{dbh};
-
-    my $desc_sth = $dbh->prepare( "SHOW CREATE PROCEDURE `$name`" );
-    $desc_sth->execute();
-    my $desc = $desc_sth->fetchrow_hashref();
-    my $sql = $desc->{'Create Procedure'};
-    $sql .= "\n" unless $sql =~ m/\n$/;
-    return $sql;
-}
-
-=item $o->pull_procedures ()
-
-=cut
-
-sub pull_procedures : method
-{
-    my $self = shift;
-
-    # Keep track of procedure names found on the database to support
-    # remove feature.
-    my %found_procedure;
-
-    for my $name ( $self->query_procedure_names ) {
-        $found_procedure{$name} = 1;
-
-        my $sql = $self->pull_procedure_sql( $name );
-
-        $self->write_procedure_sql( $name, $sql );
-    }
-
-    if( $self->{remove}{procedure} ) {
-        for my $procedure ( $self->procedure_names ) {
-            next if $found_procedure{ $procedure };
-            $self->remove_procedure_sql( $procedure );
-        }
-    }
-}
-
-=item $o->write_procedure_sql( $name, $sql )
-
-=cut
-
-sub write_procedure_sql : method
-{
-    my $self = shift;
-    my($name,$sql) = @_;
-    my $fh;
-
-    # Make table directory if required.
-    mkdir "$self->{dir}/procedure"
-        unless -d "$self->{dir}/procedure";
-
-    open $fh, ">", "$self->{dir}/procedure/$name.sql";
-    print $fh $sql;
-    close $fh;
-}
-
-=item $o->pull ()
-
-Handle the pull command.
-
-=cut
-
-sub pull : method
-{
-    my $self = shift;
-
-    $self->__dbi_connect() unless $self->{dbh} and $self->{dbh}->ping;
-
-    $self->pull_table_definitions();
-    $self->pull_trigger_fragments();
-    $self->pull_procedures();
 }
 
 =item $o->queue_create_table ( $table )
@@ -1374,6 +1208,266 @@ sub queue_drop_table : method
     );
 }
 
+
+### VIEW ###
+
+=item C<view_names ()>
+
+Return a list of all saved view names.
+
+=cut
+
+sub view_names : method
+{
+    my $self = shift;
+    my @names;
+
+    opendir my $dh, "$self->{dir}/view";
+    while( my $view_sql = readdir $dh ) {
+        my($name) = $view_sql =~ m/^(.*)\.sql$/
+            or next;
+        push @names, $name;
+    };
+
+    return @names;
+}
+
+=item $o->read_view_sql ( $table_name )
+
+Given a table name, retrieve the table definition SQL.
+
+=cut
+
+sub read_view_sql : method
+{
+    my $self = shift;
+    my($name) = @_;
+
+    # File slurp mode.
+    local $/;
+
+    open my $fh, "$self->{dir}/view/$name.sql";
+    my $sql = <$fh>;
+    close $fh;
+
+    return $sql;
+}
+
+=item $o->write_view_sql( $name, $sql )
+
+Save create view SQL for a view.
+
+=cut
+
+sub write_view_sql : method
+{
+    my $self = shift;
+    my( $name, $sql ) = @_;
+    my $fh;
+
+    # Make view directory if required.
+    mkdir "$self->{dir}/view"
+        unless -d "$self->{dir}/view";
+
+    open $fh, ">", "$self->{dir}/view/$name.sql";
+    print $fh $sql;
+    close $fh;
+}
+
+=item $o->remove_view_sql( $name )
+
+Remove create view SQL for a view.
+
+=cut
+
+sub remove_view_sql : method
+{
+    my $self = shift;
+    my( $name ) = @_;
+    unlink "$self->{dir}/view/$name.sql";
+}
+
+=item $o->query_table_names ()
+
+=cut
+
+sub query_table_names : method
+{
+    my $self = shift;
+    my $dbh = $self->{dbh};
+
+    my $sth = $dbh->prepare( "SHOW FULL TABLES WHERE Table_type='BASE TABLE'" );
+    $sth->execute();
+
+    my @tables = ();
+    while( my($name) = $sth->fetchrow_array ) {
+        push @tables, $name;
+    }
+
+    return @tables;
+}
+
+=item $o->query_view_sql ( $name )
+
+=cut
+
+sub query_view_sql : method
+{
+    my $self = shift;
+    my( $name ) = @_;
+    my $dbh = $self->{dbh};
+
+    my $sth = $dbh->prepare( "SHOW CREATE VIEW `$name`" );
+    $sth->execute();
+    my @row = $sth->fetchrow_array;
+
+    return "$row[1]\n";
+}
+
+=item $o->pull_view_definition ( $name )
+
+=cut
+
+sub pull_view_definition : method
+{
+    my $self = shift;
+    my( $name ) = @_;
+
+    print "Pulling view definition for `$name`\n" if $VERBOSE;
+
+    # Get MySQL create view sql
+    my $sql = $self->query_view_sql( $name );
+
+    # Save view sql.
+    $self->write_view_sql( $name, $sql );
+}
+
+=item $o->query_view_names ()
+
+=cut
+
+sub query_view_names : method
+{
+    my $self = shift;
+    my $dbh = $self->{dbh};
+
+    my $sth = $dbh->prepare( "SHOW FULL VIEWS WHERE Table_type='VIEW'" );
+    $sth->execute();
+
+    my @views = ();
+    while( my($name) = $sth->fetchrow_array ) {
+        push @views, $name;
+    }
+
+    return @views;
+}
+
+=item $o->push_view_definition( $view )
+
+=cut
+
+sub queue_push_view_definition : method
+{
+    my $self = shift;
+    my($name) = @_;
+
+    my $new_sql = $self->read_view_sql( $name );
+
+    my( $current_sql );
+    eval {
+        $current_sql = $self->query_view_sql( $name );
+    };
+
+    if( $current ) {
+        $self->queue_view_updates( $current_sql, $new_sql );
+    } else {
+        $self->queue_create_view( $new );
+    }
+
+}
+
+=item $o->push_view_definitions()
+
+=cut
+
+sub queue_push_view_definitions : method
+{
+    my $self = shift;
+
+    my @views = $self->view_names;
+
+    for my $name ( @views ) {
+
+        next if $self->__ignore_view( $name );
+
+        $self->queue_push_view_definition( $name );
+    }
+
+    if( $self->{remove}{view} ) {
+        for my $name ( $self->query_view_names ) {
+
+            next if $self->__ignore_view( $name );
+
+            # Skip views that are defined locally
+            next if grep { $name eq $_ } @views;
+
+            $self->queue_drop_view( $name );
+        }
+    }
+}
+
+=item $o->queue_drop_view ( $name )
+
+=cut
+
+sub queue_drop_view : method
+{
+    my $self = shift;
+    my($name) = @_;
+    $self->__queue_sql( 'drop_view',
+        "Drop view $name\n",
+        "DROP VIEW `$name`",
+    );
+}
+
+=item $o->pull_view_definitions ()
+
+=cut
+
+sub pull_view_definitions : method
+{
+    my $self = shift;
+    my $dbh = $self->{dbh};
+
+    # Make view directory if required.
+    mkdir "$self->{dir}/view"
+        unless -d "$self->{dir}/view";
+
+    # Variable to keep track of views in the database.
+    my %db_view = ();
+
+    for my $name ( $self->query_view_names ) {
+
+        next if $self->__ignore_view( $name );
+
+        $db_view{ $name } = 1;
+        pull_view_definition( $self, $name );
+    }
+
+    if( $self->{remove}{view} ) {
+        for my $name ( $self->view_names ) {
+            next if $self->__ignore_view( $name );
+
+            # Don't remove this view, it was found in the database.
+            next if $db_view{$name};
+
+            $self->remove_view_sql( $name );
+        }
+    }
+}
+
+### TRIGGER ###
+
 =item $o->trigger_fragments ()
 
 Return list of trigger fragment names.
@@ -1510,6 +1604,92 @@ sub queue_push_trigger_definitions : method
     }
 }
 
+=item $o->pull_trigger_definitions ()
+
+=cut
+
+sub pull_trigger_definitions : method
+{
+    my $self = shift;
+    my $dbh = $self->{dbh};
+
+    my $list_sth = $dbh->prepare( 'SHOW TRIGGERS' );
+    $list_sth->execute();
+
+    my %triggers;
+    while( my($trigger_name,$action,$table,$sql,$time) = $list_sth->fetchrow_array() ) {
+
+        next if $self->__ignore_table( $table );
+
+        # Strip off BEGIN and END from trigger body
+        $sql =~ s/^\s*BEGIN\s*(.*)END\s*$/$1/s;
+
+        # Lowercase is easier to read
+        $action = lc $action;
+        $time = lc $time;
+
+        $triggers{$table}{$action}{$time} = { sql => $sql, name => $trigger_name };
+    }
+
+    return %triggers;
+}
+
+=item $o->pull_trigger_fragments : method
+
+=cut
+
+sub pull_trigger_fragments : method
+{
+    my($self) = @_;
+
+    my %triggers = pull_trigger_definitions( $self );
+
+    # Variable to track fragments.
+    my %found_fragments = ();
+
+    for my $table ( sort keys %triggers ) {
+
+        next if $self->__ignore_table( $table );
+
+        for my $action ( sort keys %{$triggers{$table}} ) {
+            for my $time ( sort keys %{$triggers{$table}{$action}} ) {
+                my $trigger_sql = $triggers{$table}{$action}{$time}{sql};
+
+                # Parse all tagged trigger fragments
+                while( $trigger_sql =~ s{/\*\* begin (\S+) \*/\s*(.*)/\*\* end \1 \*/\s*}{}s ) {
+                    my( $name, $sql ) = ($1,$2);
+                    $self->write_trigger_fragment_sql( $name, $time, $action, $table, $sql );
+                    $found_fragments{$table}{$action}{$time}{$name} = 1;
+                }
+
+                # Handle any untagged trigger SQL?
+                $trigger_sql =~ s/\s*$//;
+                if( $trigger_sql ) {
+                    if( $self->{init_trigger_name} ) {
+                        my $name = $self->{init_trigger_name};
+                        $self->write_trigger_fragment_sql( $name, $time, $action, $table, $trigger_sql );
+                        $found_fragments{$table}{$action}{$time}{$name} = 1;
+                    } else {
+                        die "Found unlabeled trigger code for $time $action `$table`!\n$trigger_sql\nDo you need to specify --init-trigger-name=NAME?\n";
+                    }
+                }
+            }
+        }
+    }
+
+    # Remove trigger fragmentn not found during pull.
+    if( $self->{remove}{trigger} ) {
+        for my $fragment ( $self->trigger_fragments ) {
+            my($table,$action,$time,$name) = @{$fragment}{'table','action','time','name'};
+            next if $found_fragments{$table}{$action}{$time}{$name};
+
+            $self->remove_trigger_fragment( $fragment );
+        }
+    }
+}
+
+### PROCEDURE ###
+
 =item $o->procedure_names()
 
 =cut
@@ -1624,6 +1804,121 @@ sub queue_push_procedures
             $self->queue_drop_procedure( $name );
         }
     }
+}
+
+=item $o->query_procedure_names ()
+
+=cut
+
+sub query_procedure_names : method
+{
+    my $self = shift;
+    my $dbh = $self->{dbh};
+
+    my $sth = $dbh->prepare( 'SHOW PROCEDURE STATUS WHERE Db=?' );
+    $sth->execute($self->{connect}{schema});
+
+    my @names = ();
+    while( my $procedure = $sth->fetchrow_hashref() ) {
+        push @names, $procedure->{Name};
+    }
+
+    return @names;
+}
+
+=item $o->remove_procedure_sql( $name )
+
+=cut
+
+sub remove_procedure_sql : method
+{
+    my $self = shift;
+    my( $name ) = @_;
+    unlink "$self->{dir}/procedure/$name.sql";
+}
+
+=item $o->pull_procedure_sql ( $name )
+
+=cut
+
+sub pull_procedure_sql : method
+{
+    my $self = shift;
+    my($name) = @_;
+    my $dbh = $self->{dbh};
+
+    my $desc_sth = $dbh->prepare( "SHOW CREATE PROCEDURE `$name`" );
+    $desc_sth->execute();
+    my $desc = $desc_sth->fetchrow_hashref();
+    my $sql = $desc->{'Create Procedure'};
+    $sql .= "\n" unless $sql =~ m/\n$/;
+    return $sql;
+}
+
+=item $o->pull_procedures ()
+
+=cut
+
+sub pull_procedures : method
+{
+    my $self = shift;
+
+    # Keep track of procedure names found on the database to support
+    # remove feature.
+    my %found_procedure;
+
+    for my $name ( $self->query_procedure_names ) {
+        $found_procedure{$name} = 1;
+
+        my $sql = $self->pull_procedure_sql( $name );
+
+        $self->write_procedure_sql( $name, $sql );
+    }
+
+    if( $self->{remove}{procedure} ) {
+        for my $procedure ( $self->procedure_names ) {
+            next if $found_procedure{ $procedure };
+            $self->remove_procedure_sql( $procedure );
+        }
+    }
+}
+
+=item $o->write_procedure_sql( $name, $sql )
+
+=cut
+
+sub write_procedure_sql : method
+{
+    my $self = shift;
+    my($name,$sql) = @_;
+    my $fh;
+
+    # Make table directory if required.
+    mkdir "$self->{dir}/procedure"
+        unless -d "$self->{dir}/procedure";
+
+    open $fh, ">", "$self->{dir}/procedure/$name.sql";
+    print $fh $sql;
+    close $fh;
+}
+
+### GENERAL ###
+
+=item $o->pull ()
+
+Handle the pull command.
+
+=cut
+
+sub pull : method
+{
+    my $self = shift;
+
+    $self->__dbi_connect() unless $self->{dbh} and $self->{dbh}->ping;
+
+    $self->pull_table_definitions();
+    $self->pull_trigger_fragments();
+    $self->pull_procedures();
 }
 
 =item $o->push ()
