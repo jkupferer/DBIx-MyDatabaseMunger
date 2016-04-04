@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 7;
+use Test::More tests => 10;
 
 sub write_modification
 {
@@ -50,7 +50,11 @@ clear_directories();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull again" );
 
-$ret = system(qw(md5sum -c t/50-drop-columns.nodrop.md5));
+$ret = system(qw(diff -ur table t/50-drop-columns.nodrop.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/50-drop-columns.nodrop.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
 
 write_modification();
 
@@ -62,7 +66,10 @@ clear_directories();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull again" );
 
-$ret = system(qw(md5sum -c t/50-drop-columns.md5));
-ok( $ret == 0, "check md5" );
+$ret = system(qw(diff -ur table t/50-drop-columns.yesdrop.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/50-drop-columns.yesdrop.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
 
 exit 0;

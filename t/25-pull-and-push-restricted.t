@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 5;
+use Test::More tests => 6;
 
 use lib 'lib';
 use_ok('DBIx::MyDatabaseMunger');
@@ -31,7 +31,10 @@ clear_directories();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull again" );
 
-$ret = system(qw(md5sum -c t/25-pull-and-push-restricted.md5));
-ok( $ret == 0, "check pull md5 again" );
+$ret = system(qw(diff -ur table t/25-pull-and-push-restricted.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/25-pull-and-push-restricted.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
 
 exit 0;

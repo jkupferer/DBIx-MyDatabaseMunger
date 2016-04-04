@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 8;
+use Test::More tests => 10;
 
 use lib 'lib';
 use_ok('DBIx::MyDatabaseMunger');
@@ -56,8 +56,15 @@ clear_directories();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull again" );
 
-$ret = system(qw(md5sum -c t/40-make-archive-then-modify-and-update.md5));
-ok( $ret == 0, "check pull md5 again" );
+$ret = system(qw(diff -ur table t/40-make-archive-then-modify-and-update.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/40-make-archive-then-modify-and-update.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
+
+$ret = system(qw(diff -ur trigger t/40-make-archive-then-modify-and-update.d/trigger));
+ok( $ret == 0, "check pull trigger sql" );
+
 
 #unlink glob "table/*";
 #rmdir "table";

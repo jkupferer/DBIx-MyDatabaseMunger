@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 13;
+use Test::More tests => 18;
 
 use lib 'lib';
 use_ok('DBIx::MyDatabaseMunger');
@@ -41,14 +41,21 @@ t_add_procedure_sql();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "Run pull without --remove=any" );
 
-$ret = system(qw(md5sum -c t/80-procedures.md5));
-ok( $ret == 0, "Check procedures md5" );
+$ret = system(qw(diff -ur table t/80-procedures.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/80-procedures.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
 
 $ret = system( @cmdroot, "--remove=any", "pull" );
 ok( $ret == 0, "pull with --remove=any" );
 
-$ret = system(qw(md5sum -c t/80-procedures.remove.md5));
-ok( $ret == 0, "Check procedures md5" );
+$ret = system(qw(diff -ur table t/80-procedures.remove.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/80-procedures.remove.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
+
 ok( !-e "procedure/create_user.sql", "check procedure sql was removed." );
 
 t_add_procedure_sql();
@@ -59,8 +66,12 @@ ok( $ret == 0, "push" );
 clear_directories();
 
 $ret = system( @cmdroot, "pull" );
-$ret = system(qw(md5sum -c t/80-procedures.md5));
-ok( $ret == 0, "Check procedures md5" );
+$ret = system(qw(diff -ur table t/80-procedures.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/80-procedures.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
+
 
 # Remove local sql then test push without remove
 unlink "procedure/create_user.sql";
@@ -71,8 +82,11 @@ ok( $ret == 0, "push" );
 clear_directories();
 
 $ret = system( @cmdroot, "pull" );
-$ret = system(qw(md5sum -c t/80-procedures.md5));
-ok( $ret == 0, "Check procedures md5" );
+$ret = system(qw(diff -ur table t/80-procedures.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/80-procedures.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
 
 # Remove local sql then test push with remove
 unlink "procedure/create_user.sql";
@@ -83,7 +97,10 @@ ok( $ret == 0, "push --remove=any" );
 clear_directories();
 
 $ret = system( @cmdroot, "pull" );
-$ret = system(qw(md5sum -c t/80-procedures.remove.md5));
-ok( $ret == 0, "Check procedures md5" );
+$ret = system(qw(diff -ur table t/80-procedures.remove.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/80-procedures.remove.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
 
 exit 0;

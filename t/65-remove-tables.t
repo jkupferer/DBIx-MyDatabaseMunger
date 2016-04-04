@@ -4,7 +4,7 @@
 #
 use strict;
 use warnings;
-use Test::More tests => 7;
+use Test::More tests => 9;
 
 use lib 'lib';
 use_ok('DBIx::MyDatabaseMunger');
@@ -29,14 +29,20 @@ t_drop_table( 'Service' );
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull without --remove=any" );
 
-$ret = system(qw(md5sum -c t/65-remove-tables.noremove.md5));
-ok( $ret == 0, "check md5, should have Service table" );
+$ret = system(qw(diff -ur table t/65-remove-tables.noremove.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/65-remove-tables.noremove.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
 
 $ret = system( @cmdroot, "--remove=any", "pull" );
 ok( $ret == 0, "pull with --remove=any" );
 
-$ret = system(qw(md5sum -c t/65-remove-tables.md5));
-ok( $ret == 0, "check md5, should not have Service table" );
+$ret = system(qw(diff -ur table t/65-remove-tables.yesremove.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/65-remove-tables.yesremove.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
 
 ok( ! -e "table/Service.sql", "check that table/Service.sql is removed" );
 

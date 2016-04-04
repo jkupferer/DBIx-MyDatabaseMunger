@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 7;
+use Test::More tests => 10;
 
 use lib 'lib';
 use_ok('DBIx::MyDatabaseMunger');
@@ -31,7 +31,11 @@ clear_directories();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull again" );
 
-$ret = system(qw(md5sum -c t/60-remove-tables.noremove.md5));
+$ret = system(qw(diff -ur table t/60-remove-tables.noremove.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/60-remove-tables.noremove.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
 
 unlink "table/Service.sql";
 
@@ -43,7 +47,11 @@ clear_directories();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull again" );
 
-$ret = system(qw(md5sum -c t/60-remove-tables.md5));
-ok( $ret == 0, "check md5" );
+$ret = system(qw(diff -ur table t/60-remove-tables.yesremove.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/60-remove-tables.yesremove.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
+
 
 exit 0;

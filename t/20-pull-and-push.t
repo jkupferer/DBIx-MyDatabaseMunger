@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 6;
+use Test::More tests => 8;
 
 use lib 'lib';
 use_ok('DBIx::MyDatabaseMunger');
@@ -21,8 +21,11 @@ my $ret;
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "run pull" );
 
-$ret = system(qw(md5sum -c t/20-pull-and-push.md5));
-ok( $ret == 0, "check pull md5" );
+$ret = system(qw(diff -ur table t/20-pull-and-push.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/20-pull-and-push.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
 
 clear_database();
 
@@ -34,7 +37,11 @@ clear_directories();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull again" );
 
-$ret = system(qw(md5sum -c t/20-pull-and-push.md5));
-ok( $ret == 0, "check pull md5 again" );
+$ret = system(qw(diff -ur table t/20-pull-and-push.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/20-pull-and-push.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
+
 
 exit 0;

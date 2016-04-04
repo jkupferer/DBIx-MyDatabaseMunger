@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 17;
+use Test::More tests => 27;
 
 use lib 'lib';
 use_ok('DBIx::MyDatabaseMunger');
@@ -56,8 +56,14 @@ clear_directories();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull to get new triggers" );
 
-$ret = system(qw(md5sum -c t/70-remove-triggers.init.md5));
-ok( $ret == 0, "new triggers md5" );
+$ret = system(qw(diff -ur table t/70-remove-triggers.init.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/70-remove-triggers.init.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
+
+$ret = system(qw(diff -ur trigger t/70-remove-triggers.init.d/trigger));
+ok( $ret == 0, "check pull trigger sql" );
 
 # Create another trigger fragment that is local only
 t_add_trigger_fragment();
@@ -66,15 +72,27 @@ t_add_trigger_fragment();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull without --remove=any" );
 
-$ret = system(qw(md5sum -c t/70-remove-triggers.noremove.md5));
-ok( $ret == 0, "with extra local trigger md5" );
+$ret = system(qw(diff -ur table t/70-remove-triggers.noremove.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/70-remove-triggers.noremove.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
+
+$ret = system(qw(diff -ur trigger t/70-remove-triggers.noremove.d/trigger));
+ok( $ret == 0, "check pull trigger sql" );
 
 # Run pull again with --remove=any
 $ret = system( @cmdroot, "--remove=any", "pull" );
 ok( $ret == 0, "pull with --remove=any" );
 
-$ret = system(qw(md5sum -c t/70-remove-triggers.init.md5));
-ok( $ret == 0, "check triggers that should be present" );
+$ret = system(qw(diff -ur table t/70-remove-triggers.init.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/70-remove-triggers.init.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
+
+$ret = system(qw(diff -ur trigger t/70-remove-triggers.init.d/trigger));
+ok( $ret == 0, "check pull trigger sql" );
 
 ok( ! -e "trigger/10-allone.before.insert.Service.sql", "check trigger fragment was removed." );
 
@@ -91,8 +109,14 @@ $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull to check results of push without --remove=any" );
 
 # We should be back to the initial state
-$ret = system(qw(md5sum -c t/70-remove-triggers.init.md5));
-ok( $ret == 0, "check md5 on pull after push without --remove=any" );
+$ret = system(qw(diff -ur table t/70-remove-triggers.init.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/70-remove-triggers.init.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
+
+$ret = system(qw(diff -ur trigger t/70-remove-triggers.init.d/trigger));
+ok( $ret == 0, "check pull trigger sql" );
 
 # Again remove one of the local trigger fragments.
 unlink "trigger/10-test.before.insert.Service.sql";
@@ -106,8 +130,14 @@ clear_directories();
 $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "pull to check results of push with --remove=any" );
 
-$ret = system(qw(md5sum -c t/70-remove-triggers.remove.md5));
-ok( $ret == 0, "check md5 on pull after push with --remove=any" );
+$ret = system(qw(diff -ur table t/70-remove-triggers.remove.d/table));
+ok( $ret == 0, "check pull table sql" );
+
+$ret = system(qw(diff -ur procedure t/70-remove-triggers.remove.d/procedure));
+ok( $ret == 0, "check pull procedure sql" );
+
+$ret = system(qw(diff -ur trigger t/70-remove-triggers.remove.d/trigger));
+ok( $ret == 0, "check pull trigger sql" );
 
 ok( ! -e "trigger/10-test.before.insert.Service.sql", "check trigger fragment was removed from database." );
 

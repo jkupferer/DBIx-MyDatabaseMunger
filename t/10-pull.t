@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
-use Test::More tests => 3;
+use Test::More tests => 4;
 
 use lib 'lib';
 use_ok('DBIx::MyDatabaseMunger');
@@ -20,7 +20,10 @@ my @cmdroot = ("perl","$FindBin::RealBin/../bin/mydbmunger","-c",$conf_file);
 my $ret = system( @cmdroot, "pull" );
 ok( $ret == 0, "run pull" );
 
-$ret = system(qw(md5sum -c t/10-pull-tables.md5));
-ok( $ret == 0, "check pull md5" );
+$ret = system(qw(diff -ur table t/10-pull.d/table));
+ok( $ret == 0, "check table sql" );
+
+$ret = system(qw(diff -ur procedure t/10-pull.d/procedure));
+ok( $ret == 0, "check procedure sql" );
 
 exit 0;
