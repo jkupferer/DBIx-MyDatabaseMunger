@@ -1378,10 +1378,10 @@ sub queue_push_view_definition : method
         $current_sql = $self->query_view_sql( $name );
     };
 
-    if( $current ) {
+    if( $current_sql ) {
         $self->queue_view_updates( $current_sql, $new_sql );
     } else {
-        $self->queue_create_view( $new );
+        $self->queue_create_view( $new_sql );
     }
 
 }
