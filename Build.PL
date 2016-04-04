@@ -11,6 +11,7 @@ my $build = new Module::Build (
         'DBI' => undef,
         'DBD::mysql' => undef,
         'JSON' => undef,
+        'SQL::QueryBuilder::Pretty' => undef,
         'Storable' => undef,
     },
 );
