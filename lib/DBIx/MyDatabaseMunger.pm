@@ -1245,7 +1245,10 @@ sub view_names : method
     my $self = shift;
     my @names;
 
-    opendir my $dh, "$self->{dir}/view";
+    my $viewdir = "$self->{dir}/view";
+    return () unless -d $viewdir;
+
+    opendir my $dh, $viewdir;
     while( my $view_sql = readdir $dh ) {
         my($name) = $view_sql =~ m/^(.*)\.sql$/
             or next;
