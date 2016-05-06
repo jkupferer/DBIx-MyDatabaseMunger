@@ -1250,9 +1250,10 @@ sub view_names : method
 
     my $dh;
     opendir $dh, $viewdir;
-    while( my $view_sql = readdir $dh ) {
+    for my $view_sql ( sort readdir $dh ) {
         my($name) = $view_sql =~ m/^(.*)\.sql$/
             or next;
+        $name =~ s/^\d\d-//;
         push @names, $name;
     };
 
@@ -1273,7 +1274,10 @@ sub read_view_sql : method
     # File slurp mode.
     local $/;
 
-    open my $fh, "$self->{dir}/view/$name.sql";
+    # Look for file with numeric prefix.
+    my($file) = glob "$self->{dir}/view/[0-9][0-9]-$name.sql";
+    $file ||= "$self->{dir}/view/$name.sql";
+    open(my $fh, $file);
     my $sql = <$fh>;
     close $fh;
 
@@ -1296,7 +1300,10 @@ sub write_view_sql : method
     mkdir "$self->{dir}/view"
         unless -d "$self->{dir}/view";
 
-    open $fh, ">", "$self->{dir}/view/$name.sql";
+    my($file) = glob "$self->{dir}/view/[0-9][0-9]-$name.sql";
+    $file ||= "$self->{dir}/view/$name.sql";
+
+    open $fh, ">", $file;
     print $fh $sql;
     close $fh;
 }
