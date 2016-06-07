@@ -365,13 +365,14 @@ sub parse_create_table_sql : method
     my @create_sql = split "\n", $sql;
 
     # Read the table name from the "CREATE TABLE `<NAME>` (
-    shift( @create_sql ) =~ m/CREATE TABLE `(.*)`/ or die "Create table SQL does not begin with CREATE TABLE!\n";
+    shift( @create_sql ) =~ m/CREATE TABLE `(.*)`/
+        or die "Create table SQL does not begin with CREATE TABLE!\n";
     my $name = $1;
 
     # The last line should have the table options
-    # ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 COMMENT='Application User.'
-    # We don't need to understand every last option, but let's extract at least the
-    # ENGINE and COMMENT.
+    # ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 COMMENT='App User'
+    # We don't need to understand every last option, but let's extract at least
+    # the ENGINE and COMMENT.
     my $line = pop @create_sql;
     my($table_options) = $line =~ m/\)\s*(.*)/;
 
@@ -404,7 +405,8 @@ sub parse_create_table_sql : method
     for my $line ( @create_sql ) {
         $line =~ s/,$//; # Strip trailing commas
 
-        # Strip out DEFAULT NULL so that it is easier to compare column definitions.
+        # Strip out DEFAULT NULL so that it is easier to compare column
+        # definitions.
         $line =~ s/ DEFAULT NULL//;
 
         if( $line =~ m/^\s*`([^`]+)`\s*(.*)/ ) {
@@ -417,8 +419,13 @@ sub parse_create_table_sql : method
             my($key, $def) = ($3, $1);
             push @keys, $key;
             $key_definition{ $key } = $def;
-        } elsif( $line =~ m/^\s*CONSTRAINT\s+`(.*)` FOREIGN KEY \(`(.*)`\) REFERENCES `(.*)` \(`(.*)`\) *(.*)/ ) {
-            my($name, $cols, $reftable, $refcols, $cascade_opt) = ($1, $2, $3, $4, $5);
+        } elsif( $line =~ m/^\s*
+            CONSTRAINT\s+`(.*)`\s+
+            FOREIGN\s+KEY\s+\(`(.*)`\)\s+
+            REFERENCES\s+`(.*)`\s+\(`(.*)`\)\s+(.*)
+        /x ) {
+            my($name, $cols, $reftable, $refcols, $cascade_opt) =
+                ($1, $2, $3, $4, $5);
             my @cols = split '`,`', $cols;
             my @refcols = split '`,`', $refcols;
             push @constraints, $name;
@@ -487,7 +494,8 @@ sub get_table_desc : method
         $desc = $self->parse_create_table_sql( $sql );
     };
     die "Error parsing SQL for table `$name`:\n$@" if $@;
-    die "Table name mismatch while reading SQL for `$name`, got `$desc->{name}` instead!\n"
+    die "Table name mismatch while reading SQL for `$name`, " .
+        "got `$desc->{name}` instead!\n"
         unless $name eq $desc->{name};
 
     return $desc;
@@ -555,16 +563,20 @@ sub check_table_is_archive_capable : method
         $coldef = $table->{column_definition}{$col}
             or next;
         $coldef =~ m/\b(timestamp|datetime)\b/
-            or die "$table->{name} column $col is neither a timestamp or datetime field.\n";
+            or die "$table->{name} column $col is neither a timestamp or " .
+                   "datetime field.\n";
     }
 
     # Check for obvious name conflicts.
     for my $col (qw(dbuser action stmt)) {
-        die "Archive table column conflict, souce table `$table->{name}` has column `$col`.\n"
+        die "Archive table column conflict, souce table `$table->{name}` has " .
+            "column `$col`.\n"
             if $table->{column_definition}{$col};
     }
 
-    die "I can't promise this will work for table $table->{name} with ENGINE=$table->{engine}\n"
+    # FIXME - There are probably other engines that are okay, but which?
+    die "I can't promise this will work for table $table->{name} with " .
+        "ENGINE=$table->{engine}\n"
         unless $table->{engine} eq 'InnoDB';
 }
 
@@ -583,8 +595,10 @@ sub check_table_updatable : method
     die "Table `$name` lacks a primary key."
         unless @{$current->{primary_key}};
 
-    die "Table `$name` primary key is not (`" . join('`,`', @{$desired->{primary_key}}) . "`)\n"
-        unless join('|', @{$current->{primary_key}}) eq join('|', @{$desired->{primary_key}});
+    my $desired_pkstr = '`' . join('`,`', @{$desired->{primary_key}}) . '`';
+    my $current_pkstr = '`' . join('`,`', @{$current->{primary_key}}) . '`';
+    die "Table `$name` primary key is ($current_pkstr) not ($desired_pkstr)\n"
+        unless $current_pkstr eq $desired_pkstr;
 
     # Check for update paths between column definitions...
     for my $col ( @{$desired->{columns}} ) {
@@ -595,19 +609,31 @@ sub check_table_updatable : method
         # part of a unique index.
         next unless $cdef;
 
-        my $num_type = qr/^((|tiny|small|medium|big)int|decimal|numeric|floadt|double)\b/;
+        my $num_type = qr/^(
+            (|tiny|small|medium|big)int |
+            decimal |
+            numeric |
+            float   |
+            double)\b/x;
         my $datetime_type = qr/^(date|datetime|timestamp)\b/;
-        my $string_type = qr/^(char|varchar|binary|varbinary|(|tiny|medium|long)(blob|text)|enum|set)\b/;
+        my $string_type = qr/^(
+            (|var)(char|binary) |
+            (|tiny|medium|long)(blob|text) |
+            enum | set)\b/x;
         if( $ddef =~ $num_type ) {
-            $cdef =~ $num_type or die "Table $name column $col is not a numeric type.\n";
+            $cdef =~ $num_type
+                 or die "Table $name column $col is not a numeric type.\n";
         } elsif( $ddef =~ $datetime_type ) {
-            $cdef =~ $datetime_type or die "Table $name column $col is not a datetime or timestamp type.\n";
+            $cdef =~ $datetime_type
+                 or die "Table $name column $col is not a date or time type.\n";
         } elsif( $ddef =~ $string_type ) {
-            $cdef =~ $string_type or die "Table $name column $col is not a string type.\n";
+            $cdef =~ $string_type
+                 or die "Table $name column $col is not a string type.\n";
         }
     }
 
-    die "Unable Table `$current->{name}`, engine mismatch $current->{engine} vs. $desired->{engine}\n"
+    die "Unable Table `$current->{name}`, engine mismatch " .
+        "$current->{engine} vs. $desired->{engine}\n"
         unless $current->{engine} eq $desired->{engine};
 }
 
@@ -638,13 +664,16 @@ sub make_archive_table_desc : method
     # Column definitions required for audit fields.
     my %column_definition = (
         $self->{colname}{dbuser} =>
-            "varchar(256) NOT NULL COMMENT 'Database user & host that made this change.'",
+            "varchar(256) NOT NULL COMMENT 'Database user & host that made " .
+            "this change.'",
         $self->{colname}{updid} =>
-            "varchar(256) NOT NULL COMMENT 'Application user that made this change.'",
+            "varchar(256) NOT NULL COMMENT 'Application user that made this " .
+            "change.'",
         $self->{colname}{action} =>
             "enum('insert','update','delete') NOT NULL COMMENT 'SQL action.'",
         $self->{colname}{stmt} =>
-            "longtext NOT NULL COMMENT 'SQL Statement that initiated this change.'",
+            "longtext NOT NULL COMMENT 'SQL Statement that initiated this " .
+            "change.'",
     );
 
     my @columns;
@@ -760,8 +789,11 @@ sub write_table_definition : method
     my $comment = $table->{comment} || $table->{name};
     $comment =~ s/'/''/g;
 
-    $sql .= "  PRIMARY KEY (`" . join('`,`', @{$table->{primary_key}} ) . "`)\n";
-    $sql .= ") ENGINE=$table->{engine} $table->{table_options} COMMENT='$comment'\n";
+    $sql .= "  PRIMARY KEY (`" .
+            join('`,`', @{$table->{primary_key}} ) .
+            "`)\n";
+    $sql .= ") ENGINE=$table->{engine} $table->{table_options} " .
+            "COMMENT='$comment'\n";
 
     $self->write_table_sql( $table->{name}, $sql );
 }
@@ -825,50 +857,64 @@ sub write_archive_trigger_fragments : method
         "SET NEW.`$colname->{revision}` = (\n" .
         "  SELECT IFNULL( MAX(`$colname->{revision}`) + 1, 0 )\n" .
         "  FROM `$archive_table->{name}`\n" .
-        "  WHERE " . join(" AND ", map { "`$_` = NEW.`$_`" } @{$table->{primary_key}}) . "\n" .
-        ");\n";
+        "  WHERE " .
+            join(" AND ", map {
+                "`$_` = NEW.`$_`"
+            } @{$table->{primary_key}}) .
+        "\n);\n";
     $fragment .= "SET NEW.`$colname->{ctime}` = CURRENT_TIMESTAMP;\n"
-        if $colname->{ctime} and $table->{column_definition}{ $colname->{ctime} };
+        if $colname->{ctime} and $table->{column_definition}{$colname->{ctime}};
     $fragment .= "SET NEW.`$colname->{mtime}` = CURRENT_TIMESTAMP;\n"
-        if $colname->{mtime} and $table->{column_definition}{ $colname->{mtime} };
+        if $colname->{mtime} and $table->{column_definition}{$colname->{mtime}};
     $fragment .= "SET NEW.`$colname->{updid}` = $self->{updidvar};\n"
         if $table->{column_definition}{ $colname->{updid} };
-    $self->write_trigger_fragment_sql( "20-archive", "before", "insert", $table->{name}, $fragment);
+    $self->write_trigger_fragment_sql(
+       "20-archive", "before", "insert", $table->{name}, $fragment
+    );
 
 
     # Before update
-    $fragment = "SET NEW.`$colname->{revision}` = OLD.`$colname->{revision}` + 1;\n";
+    $fragment =
+        "SET NEW.`$colname->{revision}` = OLD.`$colname->{revision}` + 1;\n";
     $fragment .= "SET NEW.`$colname->{ctime}` = OLD.`$colname->{ctime}`;\n"
-        if $colname->{ctime} and $table->{column_definition}{ $colname->{ctime} };
+        if $colname->{ctime} and $table->{column_definition}{$colname->{ctime}};
     $fragment .= "SET NEW.`$colname->{mtime}` = CURRENT_TIMESTAMP;\n"
-        if $colname->{mtime} and $table->{column_definition}{ $colname->{mtime} };
+        if $colname->{mtime} and $table->{column_definition}{$colname->{mtime}};
     $fragment .= "SET NEW.`$colname->{updid}` = $self->{updidvar};\n"
         if $table->{column_definition}{ $colname->{updid} };
-    $self->write_trigger_fragment_sql( "20-archive", "before", "update", $table->{name}, $fragment);
+    $self->write_trigger_fragment_sql(
+        "20-archive", "before", "update", $table->{name}, $fragment
+    );
 
 
     # Columns that don't receive special treatment.
     # Exclude columns with special names.
-    my %namecol = map { $colname->{$_} ? ($colname->{$_} => $_) : () } keys %$colname;
+    my %namecol = map {
+        $colname->{$_} ? ($colname->{$_} => $_) : ()
+    } keys %$colname;
     my @cols = grep { not $namecol{$_} } @{ $table->{columns} };
 
     # Special columns
     my @scols = grep { $colname->{$_} } sort keys %$colname;
     # Drop handling of ctime if not is table.
-    if( $colname->{ctime} and not $table->{column_definition}{ $colname->{ctime} } ) {
+    if( $colname->{ctime}
+        and not $table->{column_definition}{$colname->{ctime}}
+    ) {
         @scols = grep { $_ ne 'ctime' } @scols;
     }
 
     $fragment =
         "BEGIN DECLARE stmt longtext;\n" .
-        "SET stmt = ( SELECT info FROM INFORMATION_SCHEMA.PROCESSLIST WHERE id = CONNECTION_ID() );\n" .
+        "SET stmt = ( SELECT info FROM INFORMATION_SCHEMA.PROCESSLIST " .
+        "WHERE id = CONNECTION_ID() );\n" .
         "INSERT INTO `$archive_table->{name}` (\n" .
         "  `" . join( '`, `', @cols, map { $colname->{$_} } @scols ) . "`\n".
         ") VALUES (\n";
 
     # After insert
-    $self->write_trigger_fragment_sql( "40-archive", "after", "insert", $table->{name}, $fragment.
-        "  NEW.`" . join('`, NEW.`', @cols) . "`,\n" .
+    $self->write_trigger_fragment_sql(
+        "40-archive", "after", "insert", $table->{name},
+        $fragment . "  NEW.`" . join('`, NEW.`', @cols) . "`,\n" .
         "  " . join(', ', map {
             m/^(ctime|mtime|revision)$/ ? "NEW.`$colname->{$_}`" :
             $_ eq 'action'  ? "'insert'" :
@@ -879,8 +925,9 @@ sub write_archive_trigger_fragments : method
     );
 
     # After update
-    $self->write_trigger_fragment_sql( "40-archive", "after", "update", $table->{name}, $fragment.
-        "  NEW.`" . join('`, NEW.`', @cols) . "`,\n" .
+    $self->write_trigger_fragment_sql(
+        "40-archive", "after", "update", $table->{name},
+        $fragment . "  NEW.`" . join('`, NEW.`', @cols) . "`,\n" .
         "  " . join(', ', map {
             m/^(ctime|mtime|revision)$/ ? "NEW.`$colname->{$_}`" :
             $_ eq 'action'  ? "'update'" :
@@ -891,8 +938,9 @@ sub write_archive_trigger_fragments : method
     );
 
     # After delete
-    $self->write_trigger_fragment_sql( "40-archive", "after", "delete", $table->{name}, $fragment.
-        "  OLD.`" . join('`, OLD.`', @cols) . "`,\n" .
+    $self->write_trigger_fragment_sql(
+        "40-archive", "after", "delete", $table->{name},
+        $fragment . "  OLD.`" . join('`, OLD.`', @cols) . "`,\n" .
         "  " . join(', ', map {
             $_ eq 'action'   ? "'delete'" :
             $_ eq 'updid'    ? $self->{updidvar} :
@@ -1023,7 +1071,9 @@ sub create_table_sql : method
 
     unless( $opt->{no_constraints} ) {
         for my $constraint ( sort @{$table->{constraints}} ) {
-            $sql .= "  " . $self->constraint_sql( $table->{constraint_definition}{$constraint} ) . ",\n";
+            $sql .= "  " . $self->constraint_sql(
+                $table->{constraint_definition}{$constraint}
+            ) . ",\n";
         }
     }
 
@@ -1051,7 +1101,9 @@ sub constraint_sql : method
         . join('`,`', @{$constraint->{columns}})
         . "`) REFERENCES `$constraint->{reference_table}` (`"
         . join('`,`', @{$constraint->{reference_columns}})
-        . "`)" . ($constraint->{cascade_opt} ? " $constraint->{cascade_opt}" : '');
+        . "`)" . (
+            $constraint->{cascade_opt} ? " $constraint->{cascade_opt}" : ''
+        );
 }
 
 =item $o->queue_add_table_constraint ( $table, $constraint )
@@ -1102,10 +1154,13 @@ sub queue_table_updates : method
     for( my $i=0; $i < @{ $new->{columns} }; ++$i ) {
         my $col = $new->{columns}[$i];
         if( $current->{column_definition}{$col} ) {
-            unless( $current->{column_definition}{$col} eq $new->{column_definition}{$col} ) {
+            unless( $current->{column_definition}{$col}
+                 eq $new->{column_definition}{$col}
+            ) {
                 $self->__queue_sql( 'modify_column',
                     "Modify column $col in $current->{name}\n",
-                    "ALTER TABLE `$current->{name}` MODIFY COLUMN `$col` $new->{column_definition}{$col}",
+                    "ALTER TABLE `$current->{name}` " . 
+                    "MODIFY COLUMN `$col` $new->{column_definition}{$col}",
                 );
             }
         } else {
@@ -1134,28 +1189,33 @@ sub queue_table_updates : method
     }
 
     for my $key ( @{ $new->{keys} } ) {
-        if( $current->{key_definition}{$key} ) {
-            unless( $current->{key_definition}{$key} eq $new->{key_definition}{$key} ) {
+        my $new_keydef = $new->{key_definition}{$key};
+        my $current_keydef = $current->{key_definition}{$key};
+
+        if( $current_keydef ) {
+            unless( $current_keydef eq $new_keydef ) {
                 $self->__queue_sql( 'drop_key',
                     "Drop key $key on $current->{name}.",
                     "ALTER TABLE `$current->{name}` DROP KEY `$key`",
                 );
                 $self->__queue_sql( 'add_key',
                     "Add key $key on $current->{name}.",
-                    "ALTER TABLE `$current->{name}` ADD $new->{key_definition}{$key}",
+                    "ALTER TABLE `$current->{name}` ADD $new_keydef",
                 );
             }
         } else {
             $self->__queue_sql( 'add_key',
                 "Create key $key on $current->{name}.",
-                "ALTER TABLE `$current->{name}` ADD $new->{key_definition}{$key}",
+                "ALTER TABLE `$current->{name}` ADD $new_keydef",
             );
         }
     }
 
     for my $constraint ( @{$new->{constraints}} ) {
         if( ! $current->{constraint_definition}{$constraint}
-        or freeze($current->{constraint_definition}{$constraint}) ne freeze($new->{constraint_definition}{$constraint}) ) {
+            or freeze($current->{constraint_definition}{$constraint})
+            ne freeze($new->{constraint_definition}{$constraint})
+        ) {
             $self->queue_drop_table_constraint($current, $constraint)
                 if $current->{constraint_definition}{$constraint};
             $self->queue_add_table_constraint($new, $constraint);
@@ -1541,8 +1601,9 @@ sub trigger_fragments : method
     my @fragments = ();
     for my $file ( sort readdir $dh ) {
         my($name, $time, $action, $table) =
-            $file =~ m/^(.+)\.(before|after)\.(insert|update|delete)\.(.+)\.sql$/
-            or next;
+            $file =~ m/^
+                (.+)\.(before|after)\.(insert|update|delete)\.(.+)\.sql$
+            /x or next;
         push @fragments, {
             action => $action,
             file => $file,
@@ -1569,10 +1630,12 @@ sub assemble_triggers : method
     for my $fragment ( $self->trigger_fragments ) {
 
         my $sql = $self->read_trigger_fragment_sql( $fragment );
-        my($table, $action, $time, $name) = @{$fragment}{'table', 'action', 'time', 'name'};
+        my($table, $action, $time, $name) =
+            @{$fragment}{'table', 'action', 'time', 'name'};
 
         $triggers{$table}{$action}{$time} ||= '';
-        $triggers{$table}{$action}{$time} .= "/** begin $name */\n$sql/** end $name */\n";
+        $triggers{$table}{$action}{$time} .=
+            "/** begin $name */\n$sql/** end $name */\n";
     }
 
     return %triggers;
@@ -1617,7 +1680,9 @@ sub queue_push_trigger_definitions : method
                 my $new = $triggers{$table}{$action}{$time};
                 my $current = $current_triggers{$table}{$action}{$time};
 
-                my $create_sql = "CREATE TRIGGER `${time}_${action}_${table}` $time $action ON `$table` FOR EACH ROW BEGIN\n${new}END";
+                my $create_sql =
+                    "CREATE TRIGGER `${time}_${action}_${table}` " .
+                    "$time $action ON `$table` FOR EACH ROW BEGIN\n${new}END";
 
                 if( not $current ) {
                     $self->__queue_sql( 'create_trigger',
@@ -1645,7 +1710,9 @@ sub queue_push_trigger_definitions : method
             next if $self->__ignore_table( $table );
 
             for my $action ( sort keys %{$current_triggers{$table}} ) {
-                for my $time ( sort keys %{$current_triggers{$table}{$action}} ) {
+                for my $time (
+                    sort keys %{$current_triggers{$table}{$action}}
+                ) {
                     next if $triggers{$table}{$action}{$time};
                     my $trigger = $current_triggers{$table}{$action}{$time};
 
@@ -1672,8 +1739,9 @@ sub pull_trigger_definitions : method
     $list_sth->execute();
 
     my %triggers;
-    while( my($trigger_name, $action, $table, $sql, $time) = $list_sth->fetchrow_array() ) {
-
+    while( my($trigger_name, $action, $table, $sql, $time) =
+        $list_sth->fetchrow_array()
+    ) {
         next if $self->__ignore_table( $table );
 
         # Strip off BEGIN and END from trigger body
@@ -1683,7 +1751,10 @@ sub pull_trigger_definitions : method
         $action = lc $action;
         $time = lc $time;
 
-        $triggers{$table}{$action}{$time} = { sql => $sql, name => $trigger_name };
+        $triggers{$table}{$action}{$time} = {
+            sql => $sql,
+            name => $trigger_name,
+        };
     }
 
     return %triggers;
@@ -1711,9 +1782,13 @@ sub pull_trigger_fragments : method
                 my $trigger_sql = $triggers{$table}{$action}{$time}{sql};
 
                 # Parse all tagged trigger fragments
-                while( $trigger_sql =~ s{/\*\* begin (\S+) \*/\s*(.*)/\*\* end \1 \*/\s*}{}s ) {
+                while( $trigger_sql =~ s{
+                    /\*\*\s+begin\s+(\S+)\s+\*/\s*(.*)/\*\*\s+end\s+\1\s+\*/\s*
+                }{}sx ) {
                     my( $name, $sql ) = ($1, $2);
-                    $self->write_trigger_fragment_sql( $name, $time, $action, $table, $sql );
+                    $self->write_trigger_fragment_sql(
+                        $name, $time, $action, $table, $sql
+                    );
                     $found_fragments{$table}{$action}{$time}{$name} = 1;
                 }
 
@@ -1722,10 +1797,14 @@ sub pull_trigger_fragments : method
                 if( $trigger_sql ) {
                     if( $self->{init_trigger_name} ) {
                         my $name = $self->{init_trigger_name};
-                        $self->write_trigger_fragment_sql( $name, $time, $action, $table, $trigger_sql );
+                        $self->write_trigger_fragment_sql(
+                            $name, $time, $action, $table, $trigger_sql
+                        );
                         $found_fragments{$table}{$action}{$time}{$name} = 1;
                     } else {
-                        die "Found unlabeled trigger code for $time $action `$table`!\n$trigger_sql\nDo you need to specify --init-trigger-name=NAME?\n";
+                        die "Found unlabeled trigger code for " .
+                        "$time $action `$table`!\n$trigger_sql\n" .
+                        "Do you need to specify --init-trigger-name=NAME?\n";
                     }
                 }
             }
@@ -1735,7 +1814,8 @@ sub pull_trigger_fragments : method
     # Remove trigger fragment not found during pull.
     if( $self->{remove}{trigger} ) {
         for my $fragment ( $self->trigger_fragments ) {
-            my($table, $action, $time, $name) = @{$fragment}{'table', 'action', 'time', 'name'};
+            my($table, $action, $time, $name) =
+                @{$fragment}{'table', 'action', 'time', 'name'};
             next if $found_fragments{$table}{$action}{$time}{$name};
 
             $self->remove_trigger_fragment( $fragment );
@@ -2059,21 +2139,27 @@ sub make_archive : method
 
         # Check if there is a current archive table.
         my $current_archive_table;
-        eval { $current_archive_table = $self->get_table_desc( $archive_table->{name} ) };
+        eval { $current_archive_table = $self->get_table_desc(
+            $archive_table->{name}
+        ) };
 
         if( $current_archive_table ) {
             # Check if any updates are required.
-            print "Archive table `$current_archive_table->{name}` found for `$table->{name}`.\n"
-                if $VERBOSE;
+            print "Archive table `$current_archive_table->{name}` " .
+                  "found for `$table->{name}`.\n" if $VERBOSE;
 
-            # Verify that the current archive table could be updated to new requirements.
-            $self->check_table_updatable( $current_archive_table, $archive_table );
+            # Verify that the current archive table could be updated to new
+            # requirements.
+            $self->check_table_updatable(
+                $current_archive_table,
+                $archive_table
+            );
 
             # Update the archive table definition.
             $self->write_table_definition( $archive_table );
         } else {
-            print "Writing archive table `$archive_table->{name}` definition for `$table->{name}`.\n"
-                if $VERBOSE;
+            print "Writing archive table `$archive_table->{name}` " .
+                  "definition for `$table->{name}`.\n" if $VERBOSE;
             $self->write_table_definition( $archive_table );
         }
 
