@@ -38,7 +38,7 @@ use autodie;
 use Storable qw(dclone freeze);
 use SQL::QueryBuilder::Pretty ();
 
-our $VERSION = 0.005;
+our $VERSION = 0.80;
 our $DRYRUN = 0;
 our $QUIET = 0;
 our $VERBOSE = 0;
