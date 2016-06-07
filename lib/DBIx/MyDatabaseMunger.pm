@@ -26,7 +26,8 @@ be used directly.
 
 =head1 DESCRIPTION
 
-A collection of utilities to simplify complex database management tasks.
+A library and accompanying "mydbmunger" utility to simplify complex MySQL and
+MariaDB database management tasks.
 
 =cut
 
@@ -407,17 +408,17 @@ sub parse_create_table_sql : method
         $line =~ s/ DEFAULT NULL//;
 
         if( $line =~ m/^\s*`([^`]+)`\s*(.*)/ ) {
-            my($col,$def) = ($1,$2);
+            my($col, $def) = ($1, $2);
             push @columns, $col;
             $column_definition{ $col } = $def;
         } elsif( $line =~ m/^\s*PRIMARY KEY \(`(.*)`\)/ ) {
             @primary_key = split( '`,`', $1 );
         } elsif( $line =~ m/^\s*((UNIQUE )?KEY `([^`]+)`.*)/ ) {
-            my($key,$def) = ($3,$1);
+            my($key, $def) = ($3, $1);
             push @keys, $key;
             $key_definition{ $key } = $def;
         } elsif( $line =~ m/^\s*CONSTRAINT\s+`(.*)` FOREIGN KEY \(`(.*)`\) REFERENCES `(.*)` \(`(.*)`\) *(.*)/ ) {
-            my($name,$cols,$reftable,$refcols,$cascade_opt) = ($1,$2,$3,$4,$5);
+            my($name, $cols, $reftable, $refcols, $cascade_opt) = ($1, $2, $3, $4, $5);
             my @cols = split '`,`', $cols;
             my @refcols = split '`,`', $refcols;
             push @constraints, $name;
@@ -535,7 +536,7 @@ sub check_table_is_archive_capable : method
     die "$table->{name} lacks a primary key."
         unless @{$table->{primary_key}};
 
-    my($col,$coldef);
+    my($col, $coldef);
 
     $col = $self->{colname}{revision};
     $coldef = $table->{column_definition}{$col}
@@ -582,8 +583,8 @@ sub check_table_updatable : method
     die "Table `$name` lacks a primary key."
         unless @{$current->{primary_key}};
 
-    die "Table `$name` primary key is not (`".join('`,`',@{$desired->{primary_key}})."`)\n"
-        unless join('|',@{$current->{primary_key}}) eq join('|',@{$desired->{primary_key}});
+    die "Table `$name` primary key is not (`" . join('`,`', @{$desired->{primary_key}}) . "`)\n"
+        unless join('|', @{$current->{primary_key}}) eq join('|', @{$desired->{primary_key}});
 
     # Check for update paths between column definitions...
     for my $col ( @{$desired->{columns}} ) {
@@ -759,7 +760,7 @@ sub write_table_definition : method
     my $comment = $table->{comment} || $table->{name};
     $comment =~ s/'/''/g;
 
-    $sql .= "  PRIMARY KEY (`".join('`,`', @{$table->{primary_key}} )."`)\n";
+    $sql .= "  PRIMARY KEY (`" . join('`,`', @{$table->{primary_key}} ) . "`)\n";
     $sql .= ") ENGINE=$table->{engine} $table->{table_options} COMMENT='$comment'\n";
 
     $self->write_table_sql( $table->{name}, $sql );
@@ -824,7 +825,7 @@ sub write_archive_trigger_fragments : method
         "SET NEW.`$colname->{revision}` = (\n" .
         "  SELECT IFNULL( MAX(`$colname->{revision}`) + 1, 0 )\n" .
         "  FROM `$archive_table->{name}`\n" .
-        "  WHERE ".join(" AND ", map { "`$_` = NEW.`$_`" } @{$table->{primary_key}})."\n" .
+        "  WHERE " . join(" AND ", map { "`$_` = NEW.`$_`" } @{$table->{primary_key}}) . "\n" .
         ");\n";
     $fragment .= "SET NEW.`$colname->{ctime}` = CURRENT_TIMESTAMP;\n"
         if $colname->{ctime} and $table->{column_definition}{ $colname->{ctime} };
@@ -832,7 +833,7 @@ sub write_archive_trigger_fragments : method
         if $colname->{mtime} and $table->{column_definition}{ $colname->{mtime} };
     $fragment .= "SET NEW.`$colname->{updid}` = $self->{updidvar};\n"
         if $table->{column_definition}{ $colname->{updid} };
-    $self->write_trigger_fragment_sql( "20-archive","before","insert",$table->{name},$fragment);
+    $self->write_trigger_fragment_sql( "20-archive", "before", "insert", $table->{name}, $fragment);
 
 
     # Before update
@@ -843,7 +844,7 @@ sub write_archive_trigger_fragments : method
         if $colname->{mtime} and $table->{column_definition}{ $colname->{mtime} };
     $fragment .= "SET NEW.`$colname->{updid}` = $self->{updidvar};\n"
         if $table->{column_definition}{ $colname->{updid} };
-    $self->write_trigger_fragment_sql( "20-archive","before","update",$table->{name},$fragment);
+    $self->write_trigger_fragment_sql( "20-archive", "before", "update", $table->{name}, $fragment);
 
 
     # Columns that don't receive special treatment.
@@ -862,37 +863,37 @@ sub write_archive_trigger_fragments : method
         "BEGIN DECLARE stmt longtext;\n" .
         "SET stmt = ( SELECT info FROM INFORMATION_SCHEMA.PROCESSLIST WHERE id = CONNECTION_ID() );\n" .
         "INSERT INTO `$archive_table->{name}` (\n" .
-        "  `".join( '`, `', @cols, map { $colname->{$_} } @scols )."`\n".
+        "  `" . join( '`, `', @cols, map { $colname->{$_} } @scols ) . "`\n".
         ") VALUES (\n";
 
     # After insert
-    $self->write_trigger_fragment_sql( "40-archive","after","insert",$table->{name},$fragment.
-        "  NEW.`".join('`, NEW.`', @cols)."`,\n" .
-        "  ".join(', ', map {
+    $self->write_trigger_fragment_sql( "40-archive", "after", "insert", $table->{name}, $fragment.
+        "  NEW.`" . join('`, NEW.`', @cols) . "`,\n" .
+        "  " . join(', ', map {
             m/^(ctime|mtime|revision)$/ ? "NEW.`$colname->{$_}`" :
             $_ eq 'action'  ? "'insert'" :
             $_ eq 'updid'   ? $self->{updidvar} :
             $_ eq 'dbuser'  ? "USER()" :
             $_ eq 'stmt'    ? 'stmt' : die "BUG! $_ unhandled!"
-        } @scols )."\n);\nEND;\n"
+        } @scols) . "\n);\nEND;\n"
     );
 
     # After update
-    $self->write_trigger_fragment_sql( "40-archive","after","update",$table->{name},$fragment.
-        "  NEW.`".join('`, NEW.`', @cols)."`,\n" .
-        "  ".join(', ', map {
+    $self->write_trigger_fragment_sql( "40-archive", "after", "update", $table->{name}, $fragment.
+        "  NEW.`" . join('`, NEW.`', @cols) . "`,\n" .
+        "  " . join(', ', map {
             m/^(ctime|mtime|revision)$/ ? "NEW.`$colname->{$_}`" :
             $_ eq 'action'  ? "'update'" :
             $_ eq 'updid'   ? $self->{updidvar} :
             $_ eq 'dbuser'  ? "USER()" :
             $_ eq 'stmt'    ? 'stmt' : die "BUG! $_ unhandled!"
-        } @scols )."\n);\nEND;\n"
+        } @scols) . "\n);\nEND;\n"
     );
 
     # After delete
-    $self->write_trigger_fragment_sql( "40-archive","after","delete",$table->{name},$fragment.
-        "  OLD.`".join('`, OLD.`', @cols)."`,\n" .
-        "  ".join(', ', map {
+    $self->write_trigger_fragment_sql( "40-archive", "after", "delete", $table->{name}, $fragment.
+        "  OLD.`" . join('`, OLD.`', @cols) . "`,\n" .
+        "  " . join(', ', map {
             $_ eq 'action'   ? "'delete'" :
             $_ eq 'updid'    ? $self->{updidvar} :
             $_ eq 'ctime'    ? "OLD.`$colname->{ctime}`" :
@@ -900,7 +901,7 @@ sub write_archive_trigger_fragments : method
             $_ eq 'mtime'    ? "CURRENT_TIMESTAMP" :
             $_ eq 'revision' ? "1 + OLD.`$colname->{revision}`" :
             $_ eq 'stmt'     ? 'stmt' : die "BUG! $_ unhandled!"
-        } @scols )."\n);\nEND;\n"
+        } @scols) . "\n);\nEND;\n"
     );
 
 }
@@ -997,7 +998,7 @@ sub queue_create_table : method
     );
 
     for my $constraint ( @{$table->{constraints}} ) {
-        $self->queue_add_table_constraint($table,$constraint);
+        $self->queue_add_table_constraint($table, $constraint);
     }
 }
 
@@ -1022,11 +1023,11 @@ sub create_table_sql : method
 
     unless( $opt->{no_constraints} ) {
         for my $constraint ( sort @{$table->{constraints}} ) {
-            $sql .= "  ".$self->constraint_sql( $table->{constraint_definition}{$constraint} ).",\n";
+            $sql .= "  " . $self->constraint_sql( $table->{constraint_definition}{$constraint} ) . ",\n";
         }
     }
 
-    $sql .= "  PRIMARY KEY (`".join('`,`', @{$table->{primary_key}} )."`)\n";
+    $sql .= "  PRIMARY KEY (`" . join('`,`', @{$table->{primary_key}}) . "`)\n";
     $sql .= ") ENGINE=$table->{engine} $table->{table_options}";
     if( $table->{comment} ) {
         my $comment = $table->{comment};
@@ -1047,10 +1048,10 @@ sub constraint_sql : method
     my $self = shift;
     my($constraint) = @_;
     return "CONSTRAINT `$constraint->{name}` FOREIGN KEY (`"
-        . join('`,`',@{$constraint->{columns}})
-        ."`) REFERENCES `$constraint->{reference_table}` (`"
-        .join('`,`',@{$constraint->{reference_columns}})
-        ."`)".($constraint->{cascade_opt} ? " $constraint->{cascade_opt}" : '');
+        . join('`,`', @{$constraint->{columns}})
+        . "`) REFERENCES `$constraint->{reference_table}` (`"
+        . join('`,`', @{$constraint->{reference_columns}})
+        . "`)" . ($constraint->{cascade_opt} ? " $constraint->{cascade_opt}" : '');
 }
 
 =item $o->queue_add_table_constraint ( $table, $constraint )
@@ -1060,7 +1061,7 @@ sub constraint_sql : method
 sub queue_add_table_constraint : method
 {
     my $self = shift;
-    my($table,$constraint) = @_;
+    my($table, $constraint) = @_;
 
     my $def = $table->{constraint_definition}{$constraint};
 
@@ -1079,7 +1080,7 @@ sub queue_add_table_constraint : method
 sub queue_drop_table_constraint : method
 {
     my $self = shift;
-    my($table,$constraint) = @_;
+    my($table, $constraint) = @_;
 
     $self->__queue_sql( 'drop_constraint',
         "Drop constraint $constraint on $table->{name}.",
@@ -1096,7 +1097,7 @@ sub queue_drop_table_constraint : method
 sub queue_table_updates : method
 {
     my $self = shift;
-    my($current,$new) = @_;
+    my($current, $new) = @_;
 
     for( my $i=0; $i < @{ $new->{columns} }; ++$i ) {
         my $col = $new->{columns}[$i];
@@ -1110,7 +1111,12 @@ sub queue_table_updates : method
         } else {
             $self->__queue_sql( 'add_column',
                 "Add column $col to $current->{name}.",
-                "ALTER TABLE `$current->{name}` ADD COLUMN `$col` $new->{column_definition}{$col} ".($i == 0 ? "BEFORE `$new->{columns}[1]`" : "AFTER `".$new->{columns}[$i-1]."`"),
+                "ALTER TABLE `$current->{name}`" .
+                " ADD COLUMN `$col` $new->{column_definition}{$col} " .
+                ( $i == 0 ?
+                    + "BEFORE `$new->{columns}[1]`"
+                    : "AFTER `".$new->{columns}[$i-1]."`"
+                )
             );
         }
     }
@@ -1150,14 +1156,14 @@ sub queue_table_updates : method
     for my $constraint ( @{$new->{constraints}} ) {
         if( ! $current->{constraint_definition}{$constraint}
         or freeze($current->{constraint_definition}{$constraint}) ne freeze($new->{constraint_definition}{$constraint}) ) {
-            $self->queue_drop_table_constraint($current,$constraint)
+            $self->queue_drop_table_constraint($current, $constraint)
                 if $current->{constraint_definition}{$constraint};
-            $self->queue_add_table_constraint($new,$constraint);
+            $self->queue_add_table_constraint($new, $constraint);
         }
     }
     for my $constraint ( @{$current->{constraints}} ) {
         next if $new->{constraint_definition}{$constraint};
-        $self->queue_drop_table_constraint($current,$constraint);
+        $self->queue_drop_table_constraint($current, $constraint);
     }
 }
 
@@ -1534,7 +1540,7 @@ sub trigger_fragments : method
 
     my @fragments = ();
     for my $file ( sort readdir $dh ) {
-        my($name,$time,$action,$table) =
+        my($name, $time, $action, $table) =
             $file =~ m/^(.+)\.(before|after)\.(insert|update|delete)\.(.+)\.sql$/
             or next;
         push @fragments, {
@@ -1563,7 +1569,7 @@ sub assemble_triggers : method
     for my $fragment ( $self->trigger_fragments ) {
 
         my $sql = $self->read_trigger_fragment_sql( $fragment );
-        my($table,$action,$time,$name) = @{$fragment}{'table','action','time','name'};
+        my($table, $action, $time, $name) = @{$fragment}{'table', 'action', 'time', 'name'};
 
         $triggers{$table}{$action}{$time} ||= '';
         $triggers{$table}{$action}{$time} .= "/** begin $name */\n$sql/** end $name */\n";
@@ -1666,7 +1672,7 @@ sub pull_trigger_definitions : method
     $list_sth->execute();
 
     my %triggers;
-    while( my($trigger_name,$action,$table,$sql,$time) = $list_sth->fetchrow_array() ) {
+    while( my($trigger_name, $action, $table, $sql, $time) = $list_sth->fetchrow_array() ) {
 
         next if $self->__ignore_table( $table );
 
@@ -1706,7 +1712,7 @@ sub pull_trigger_fragments : method
 
                 # Parse all tagged trigger fragments
                 while( $trigger_sql =~ s{/\*\* begin (\S+) \*/\s*(.*)/\*\* end \1 \*/\s*}{}s ) {
-                    my( $name, $sql ) = ($1,$2);
+                    my( $name, $sql ) = ($1, $2);
                     $self->write_trigger_fragment_sql( $name, $time, $action, $table, $sql );
                     $found_fragments{$table}{$action}{$time}{$name} = 1;
                 }
@@ -1726,10 +1732,10 @@ sub pull_trigger_fragments : method
         }
     }
 
-    # Remove trigger fragmentn not found during pull.
+    # Remove trigger fragment not found during pull.
     if( $self->{remove}{trigger} ) {
         for my $fragment ( $self->trigger_fragments ) {
-            my($table,$action,$time,$name) = @{$fragment}{'table','action','time','name'};
+            my($table, $action, $time, $name) = @{$fragment}{'table', 'action', 'time', 'name'};
             next if $found_fragments{$table}{$action}{$time}{$name};
 
             $self->remove_trigger_fragment( $fragment );
@@ -1939,7 +1945,7 @@ sub pull_procedures : method
 sub write_procedure_sql : method
 {
     my $self = shift;
-    my($name,$sql) = @_;
+    my($name, $sql) = @_;
     my $fh;
 
     # Make table directory if required.
@@ -2006,7 +2012,7 @@ sub run_queue : method
         while( @{ $self->{todo}{$action} } ) {
             my $task = shift @{ $self->{todo}{$action} };
             ++$count;
-            print $task->{desc},"\n" unless $QUIET;
+            print $task->{desc}, "\n" unless $QUIET;
             print "\n$task->{sql}\n\n" if $VERBOSE or $DRYRUN;
             eval {
                 $self->{dbh}->do( $task->{sql} ) unless $DRYRUN;
