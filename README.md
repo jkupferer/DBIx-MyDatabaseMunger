@@ -83,3 +83,7 @@ mydbmunger - a MySQL/MariaDB Database Design Tool
                           Variable name used to store an application user and to
                           store in the column designated by --updidcol.
 
+Contributing
+============
+
+https://github.com/jkupferer/DBIx-MyDatabaseMunger

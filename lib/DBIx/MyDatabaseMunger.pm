@@ -2186,6 +2186,10 @@ sub set_dbh : method
 
 Johnathan Kupferer <jtk@uic.edu>
 
+=head1 CONTRIBUTING
+
+L<https://github.com/jkupferer/DBIx-MyDatabaseMunger>
+
 =head1 COPYRIGHT
 
 Copyright (C) 2015 The University of Illinois at Chicago. All Rights Reserved.
