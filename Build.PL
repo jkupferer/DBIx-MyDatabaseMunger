@@ -13,6 +13,7 @@ my $build = new Module::Build (
         'JSON' => undef,
         'SQL::QueryBuilder::Pretty' => undef,
         'Storable' => undef,
+        'Term::ReadKey' => undef,
     },
 );
 $build->create_build_script();
